@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="TestAi — Teste de velocidade inteligente com diagnóstico prático de uso, análise de latência sob carga e compatibilidade de dispositivos."
+    />
+    <title>TestAi — Diagnóstico Inteligente de Internet</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./src/styles/main.css" />
+  </head>
+  <body data-ui-mode="simple">
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-title-row">
+            <h1>Test<span>Ai</span></h1>
+            <span class="badge-pro" id="modeBadge">DIAGNÓSTICO INTELIGENTE</span>
+          </div>
+          <p class="brand-subtitle" id="brandSubtitle">
+            Descubra sua velocidade real e o que sua internet faz com estabilidade
+          </p>
+        </div>
+
+        <div class="topbar-right">
+          <div class="mode-switcher" role="group" aria-label="Modo de visualização">
+            <button
+              type="button"
+              class="mode-btn active"
+              id="modeSimpleBtn"
+              data-mode="simple"
+              aria-pressed="true"
+            >
+              Simples
+            </button>
+            <button
+              type="button"
+              class="mode-btn"
+              id="modeAdvancedBtn"
+              data-mode="advanced"
+              aria-pressed="false"
+            >
+              Avançado
+            </button>
+          </div>
+
+          <div class="status-pills">
+            <span class="pill" id="networkStatusPill">
+              <span class="status-dot online" id="networkDot"></span>
+              <span id="networkStatusText">Online</span>
+            </span>
+            <span class="pill mono adv-only" id="serverInfo">Cloudflare Edge</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="container" id="mainContainer">
+        <!-- BARRA DE CONFIGURAÇÃO AVANÇADA (NOC) -->
+        <section class="control-bar adv-only" aria-label="Configurações avançadas da medição">
+          <div class="control-group">
+            <label class="control-label" for="profileSelect">Perfil de medição</label>
+            <select id="profileSelect" class="control-select">
+              <option value="quick">Sondagem Rápida (&lt; 100 Mbps)</option>
+              <option value="standard" selected>Padrão Adaptativo (100 Mbps – 1 Gbps)</option>
+              <option value="high-capacity">Alta Capacidade (1 Gbps+)</option>
+              <option value="stability">Estabilidade Prolongada (Bufferbloat)</option>
+            </select>
+          </div>
+
+          <div class="control-actions">
+            <button
+              type="button"
+              id="contextToggleBtn"
+              class="btn-secondary"
+              aria-expanded="false"
+              aria-controls="contextDrawer"
+            >
+              + Contexto opcional
+            </button>
+            <button type="button" id="startBtnAdv" class="btn-primary">
+              Iniciar Diagnóstico
+            </button>
+          </div>
+
+          <div id="contextDrawer" class="context-drawer hidden">
+            <div class="control-group">
+              <label class="control-label" for="linkTypeSelect">Meio de conexão</label>
+              <select id="linkTypeSelect" class="control-select">
+                <option value="nao-informado" selected>Não informado</option>
+                <option value="ethernet">Cabo Ethernet (Cat5e/Cat6+)</option>
+                <option value="wifi-5-6">Wi-Fi 5 / 6 / 6E (5 GHz / 6 GHz)</option>
+                <option value="wifi-24">Wi-Fi 2,4 GHz</option>
+                <option value="movel">Rede Móvel (4G / 5G)</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label" for="contractedInput">Plano contratado (Mbps)</label>
+              <input
+                type="number"
+                id="contractedInput"
+                class="control-input"
+                min="1"
+                max="100000"
+                step="1"
+                placeholder="Ex.: 500"
+              />
+            </div>
+          </div>
+        </section>
+
+        <!-- BARRA DE PROGRESSO COMPARTILHADA -->
+        <section
+          class="progress-wrap"
+          id="progressSection"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          aria-valuetext="Pronto para iniciar"
+        >
+          <div class="progress-bar" id="progressBar"></div>
+          <div class="progress-meta">
+            <span class="progress-label" id="progressLabel">Pronto para testar sua conexão.</span>
+            <span class="progress-percent mono" id="progressPercent">0%</span>
+          </div>
+        </section>
+
+        <!-- BANNER DE ALERTAS -->
+        <div id="statusBanner" class="status-banner hidden" role="status" aria-live="polite"></div>
+
+        <!-- ================================================================
+             EXPERIÊNCIA 1: MODO SIMPLES (PADRÃO PARA USUÁRIO FINAL)
+        ================================================================ -->
+        <section id="simpleExperience" class="simple-experience">
+          <div class="card simple-hero-card">
+            <div class="simple-hero-top">
+              <span class="eyebrow" id="simpleHeroEyebrow">VELOCIDADE ATUAL</span>
+              <span class="phase-badge" id="simplePhaseLabel">Aguardando</span>
+            </div>
+
+            <div class="simple-speed-stage">
+              <span class="simple-speed-number" id="simpleCurrentSpeed">0.0</span>
+              <span class="simple-speed-unit">Mbps</span>
+            </div>
+
+            <p class="simple-live-hint" id="simpleLiveHint">
+              Toque no botão abaixo para medir download, upload, ping e estabilidade real.
+            </p>
+
+            <div class="simple-cta-row">
+              <button type="button" id="startBtnSimple" class="btn-primary btn-hero">
+                Iniciar Teste
+              </button>
+            </div>
+
+            <!-- RESUMO SIMPLIFICADO DE 4 INDICADORES -->
+            <div class="simple-summary-grid">
+              <div class="simple-stat">
+                <span class="simple-stat-label">Download</span>
+                <span class="simple-stat-value mono" id="simpleDownloadVal">—</span>
+                <span class="simple-stat-sub" id="simpleDownloadAvg">Média: —</span>
+              </div>
+
+              <div class="simple-stat">
+                <span class="simple-stat-label">Upload</span>
+                <span class="simple-stat-value mono" id="simpleUploadVal">—</span>
+                <span class="simple-stat-sub" id="simpleUploadAvg">Média: —</span>
+              </div>
+
+              <div class="simple-stat">
+                <span class="simple-stat-label">Ping</span>
+                <span class="simple-stat-value mono" id="simplePingVal">—</span>
+                <span class="simple-stat-sub">ms em repouso</span>
+              </div>
+
+              <div class="simple-stat">
+                <span class="simple-stat-label">Estabilidade</span>
+                <span class="simple-stat-value" id="simpleStabilityVal">—</span>
+                <span class="simple-stat-sub" id="simpleStabilitySub">Sob uso intenso</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- VEREDITO SIMPLIFICADO PÓS-TESTE -->
+          <article class="card simple-verdict-card hidden" id="simpleVerdictCard">
+            <div class="diag-top-row">
+              <div>
+                <span class="diag-badge" id="simpleVerdictBadge">RESULTADO</span>
+                <h2 id="simpleVerdictTitle">—</h2>
+              </div>
+              <button type="button" class="btn-secondary" id="openAdvancedFromSimpleBtn">
+                Ver análise técnica
+              </button>
+            </div>
+            <p class="diag-summary" id="simpleVerdictSummary">—</p>
+          </article>
+
+          <!-- CARDS INTELIGENTES: O QUE POSSO FAZER COM MINHA INTERNET? -->
+          <section class="capabilities-section" aria-label="O que posso fazer com minha internet">
+            <div class="section-heading">
+              <h2>O que posso fazer com minha internet?</h2>
+              <p class="card-hint" id="capabilitiesSubtitle">
+                Avaliação dinâmica baseada na velocidade e na estabilidade sob carga
+              </p>
+            </div>
+
+            <div class="capabilities-grid" id="capabilitiesGrid">
+              <div class="card empty-state" id="capabilitiesEmpty">
+                Execute um teste para ver como sua conexão se comporta em vídeos 4K, downloads, jogos e vários aparelhos.
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <!-- ================================================================
+             EXPERIÊNCIA 2: MODO AVANÇADO (NOC & ENGENHARIA)
+        ================================================================ -->
+        <section id="advancedExperience" class="advanced-experience hidden">
+          <section class="telemetry-grid" id="telemetryPanel" aria-busy="false">
+            <div class="card live-panel">
+              <aside class="thermometer-box" aria-hidden="true">
+                <span class="thermo-label" id="thermoMax">1G</span>
+                <div class="thermometer-track">
+                  <div class="thermometer-fill" id="thermoFill"></div>
+                </div>
+                <span class="thermo-label">0</span>
+              </aside>
+
+              <div class="live-readout">
+                <div class="speed-display">
+                  <div class="current-speed-box">
+                    <span class="eyebrow" id="liveMetricTitle">VAZÃO ATUAL</span>
+                    <div class="speed-number-row">
+                      <span class="speed-number" id="currentSpeed">0.0</span>
+                      <span class="unit">Mbps</span>
+                    </div>
+                    <span class="phase-badge" id="phaseLabel">Aguardando</span>
+                  </div>
+
+                  <div class="divider-v"></div>
+
+                  <div class="avg-box">
+                    <span class="avg-title">MÉDIA OBSERVADA</span>
+                    <div class="avg-value" id="avgSpeed">—</div>
+                    <div class="avg-unit" id="avgBreakdown">↓ — · ↑ — Mbps</div>
+                  </div>
+                </div>
+
+                <div class="metrics-grid">
+                  <div class="metric-card">
+                    <span class="label">Upload (P90)</span>
+                    <span class="value" id="uploadValue">—</span>
+                    <span class="meta">Mbps</span>
+                  </div>
+
+                  <div class="metric-card">
+                    <span class="label">Ping Ocioso</span>
+                    <span class="value" id="pingValue">—</span>
+                    <span class="meta">ms (mediana)</span>
+                  </div>
+
+                  <div class="metric-card">
+                    <span class="label">Jitter Ocioso</span>
+                    <span class="value" id="jitterValue">—</span>
+                    <span class="meta">ms</span>
+                  </div>
+
+                  <div class="metric-card">
+                    <span class="label">Lat. sob Download</span>
+                    <span class="value" id="downloadLatencyValue">—</span>
+                    <span class="meta" id="downloadLatencyDeltaMeta">ms carregado</span>
+                  </div>
+
+                  <div class="metric-card">
+                    <span class="label">Lat. sob Upload</span>
+                    <span class="value" id="uploadLatencyValue">—</span>
+                    <span class="meta" id="uploadLatencyDeltaMeta">ms carregado</span>
+                  </div>
+
+                  <div class="metric-card">
+                    <span class="label">Jitter sob Carga</span>
+                    <span class="value" id="loadedJitterValue">—</span>
+                    <span class="meta" id="loadedJitterBreakdownMeta">↓ — · ↑ — ms</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="charts-column">
+              <article class="card chart-card">
+                <div class="card-header">
+                  <h2>Curva de Vazão Real (Download / Upload)</h2>
+                  <span class="card-hint mono" id="throughputChartMeta">Aguardando amostras</span>
+                </div>
+                <div class="canvas-wrap">
+                  <canvas id="throughputChart" aria-label="Gráfico de vazão em tempo real"></canvas>
+                </div>
+              </article>
+
+              <article class="card chart-card">
+                <div class="card-header">
+                  <h2>Latência Ociosa vs. Sob Carga (RTT)</h2>
+                  <span class="card-hint mono" id="latencyChartMeta">Ocioso vs. carregado</span>
+                </div>
+                <div class="canvas-wrap">
+                  <canvas id="latencyChart" aria-label="Gráfico comparativo de latência"></canvas>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <!-- NAVEGAÇÃO EM 3 ABAS TÉCNICAS -->
+          <nav class="tabs-nav" role="tablist" aria-label="Painéis analíticos avançados">
+            <button
+              type="button"
+              class="tab-btn active"
+              id="tab-diagnostic"
+              role="tab"
+              aria-selected="true"
+              aria-controls="panel-diagnostic"
+              data-tab="diagnostic"
+            >
+              Diagnóstico &amp; Gaming
+            </button>
+            <button
+              type="button"
+              class="tab-btn"
+              id="tab-technical"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-technical"
+              data-tab="technical"
+            >
+              Telemetria Técnica
+            </button>
+            <button
+              type="button"
+              class="tab-btn"
+              id="tab-history"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-history"
+              data-tab="history"
+            >
+              Histórico
+            </button>
+          </nav>
+
+          <!-- ABA 1: DIAGNÓSTICO + GAMING -->
+          <section
+            id="panel-diagnostic"
+            class="tab-panel active"
+            role="tabpanel"
+            aria-labelledby="tab-diagnostic"
+          >
+            <div class="card empty-state" id="diagnosticEmpty">
+              Execute uma medição para gerar o diagnóstico multidimensional da conexão.
+            </div>
+
+            <div class="diagnostic-stack hidden" id="diagnosticStack">
+              <article class="card" id="diagnosticCard">
+                <div class="diag-top-row">
+                  <div>
+                    <span class="diag-badge" id="diagSeverityBadge">ANÁLISE</span>
+                    <h2 id="diagTitle">—</h2>
+                  </div>
+                  <div class="diag-actions">
+                    <button type="button" class="btn-secondary" id="copyReportBtn">
+                      Copiar Laudo
+                    </button>
+                    <button type="button" class="btn-secondary" id="downloadTxtBtn">
+                      Exportar .TXT
+                    </button>
+                  </div>
+                </div>
+
+                <p class="diag-summary" id="diagSummary">—</p>
+
+                <button
+                  type="button"
+                  class="btn-link-toggle hidden"
+                  id="diagDetailsToggle"
+                  aria-expanded="false"
+                  aria-controls="diagStructuredGrid"
+                >
+                  Ver detalhamento técnico completo
+                </button>
+
+                <div class="diag-structured-grid" id="diagStructuredGrid"></div>
+                <div class="secondary-findings hidden" id="diagSecondaryFindings"></div>
+              </article>
+
+              <article class="card" id="gamingCard">
+                <div class="diag-top-row">
+                  <div>
+                    <span class="diag-badge" id="gamingVerdictBadge">GAMING</span>
+                    <h2 id="gamingTitle">—</h2>
+                  </div>
+                </div>
+
+                <p class="diag-summary" id="gamingSummary">—</p>
+                <div class="gaming-pillars-grid" id="gamingPillarsGrid"></div>
+                <div class="gaming-genres-grid" id="gamingGenresGrid"></div>
+              </article>
+            </div>
+          </section>
+
+          <!-- ABA 2: TELEMETRIA TÉCNICA -->
+          <section
+            id="panel-technical"
+            class="tab-panel hidden"
+            role="tabpanel"
+            aria-labelledby="tab-technical"
+          >
+            <article class="card">
+              <div class="diag-top-row">
+                <div>
+                  <h2>Distribuição Estatística &amp; Amostras</h2>
+                  <p class="card-hint">
+                    Percentis reais (Mín / P50 / P90 / Máx) coletados durante a sessão
+                  </p>
+                </div>
+                <span class="pill mono" id="techSessionId">Sessão: —</span>
+              </div>
+
+              <div class="tech-notes-bar">
+                <label class="control-label" for="techNotesInput">
+                  Observações de campo / identificador do ponto (incluído no laudo .TXT)
+                </label>
+                <input
+                  type="text"
+                  id="techNotesInput"
+                  class="control-input"
+                  placeholder="Ex.: ONT sala, cabo Cat6 direto, porta LAN 1..."
+                />
+              </div>
+
+              <div class="table-responsive">
+                <table class="tech-table">
+                  <thead>
+                    <tr>
+                      <th>Métrica</th>
+                      <th>Valor Consolidado</th>
+                      <th>Amostras</th>
+                      <th>Mín / P50 / P90 / Máx</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="techMetricsBody">
+                    <tr>
+                      <td colspan="5" class="muted-cell">Nenhuma telemetria coletada ainda.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="tech-meta-grid" id="techContextGrid"></div>
+
+              <div class="method-disclaimer">
+                <strong>Escopo da medição via navegador:</strong>
+                Testes HTTP/TLS refletem o percurso até o nó Anycast mais próximo da Cloudflare e estão sujeitos ao escalonamento de janela TCP e aceleração TLS do dispositivo. Em jogos online, o ping final também varia conforme a região física do servidor da partida.
+              </div>
+            </article>
+          </section>
+
+          <!-- ABA 3: HISTÓRICO -->
+          <section
+            id="panel-history"
+            class="tab-panel hidden"
+            role="tabpanel"
+            aria-labelledby="tab-history"
+          >
+            <article class="card history-card">
+              <div class="diag-top-row">
+                <div>
+                  <h2>Histórico Local de Medições</h2>
+                  <p class="card-hint">
+                    Selecione até 2 testes na tabela para comparar evolução lado a lado
+                  </p>
+                </div>
+                <div class="diag-actions">
+                  <button type="button" class="btn-secondary" id="exportJsonBtn">
+                    Exportar JSON
+                  </button>
+                  <button type="button" class="btn-secondary" id="exportCsvBtn">
+                    Exportar CSV
+                  </button>
+                  <button type="button" class="btn-danger-outline" id="clearHistoryBtn">
+                    Limpar Tudo
+                  </button>
+                </div>
+              </div>
+
+              <div class="canvas-wrap history-chart-wrap">
+                <canvas id="historyChart" aria-label="Gráfico histórico de execuções"></canvas>
+              </div>
+
+              <div id="comparisonBox" class="comparison-box hidden"></div>
+
+              <div class="table-responsive">
+                <table class="tech-table">
+                  <thead>
+                    <tr>
+                      <th>Comp.</th>
+                      <th>Data / Hora</th>
+                      <th>Download</th>
+                      <th>Upload</th>
+                      <th>Ping / Jitter</th>
+                      <th>Δ Carga (↓/↑)</th>
+                      <th>Diagnóstico</th>
+                      <th>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody id="historyTableBody">
+                    <tr>
+                      <td colspan="8" class="muted-cell">
+                        Nenhum registro salvo no histórico local.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+        </section>
+
+        <!-- ================================================================
+             MÓDULO COMPARTILHADO: CAPACIDADE DO DISPOSITIVO TESTADO
+        ================================================================ -->
+        <section class="card device-card" aria-label="Capacidade de conectividade do aparelho">
+          <div class="diag-top-row">
+            <div>
+              <span class="diag-badge">INTELIGÊNCIA DE DISPOSITIVO</span>
+              <h2>Capacidade do Celular ou Aparelho Testado</h2>
+              <p class="card-hint">
+                Identifique a categoria do aparelho (Básico / Médio / Alto Desempenho) e a média real esperada nas bandas Wi-Fi 2,4 GHz, 5 GHz e 6 GHz
+              </p>
+            </div>
+          </div>
+
+          <form class="device-search-form" id="deviceSearchForm" autocomplete="off">
+            <div class="control-group device-input-wrap">
+              <label class="control-label" for="deviceQueryInput">
+                Fabricante e modelo (ex.: Galaxy A17, Galaxy S25 FE, iPhone 16, Edge 50, Redmi Note 14)
+              </label>
+              <input
+                type="text"
+                id="deviceQueryInput"
+                class="control-input"
+                maxlength="80"
+                placeholder="Digite o modelo do aparelho..."
+              />
+            </div>
+            <button type="submit" class="btn-secondary" id="deviceSearchBtn">
+              Consultar Aparelho
+            </button>
+          </form>
+
+          <div class="device-chips" id="deviceQuickChips" aria-label="Modelos populares"></div>
+          <div id="deviceFeedback" class="device-feedback hidden" role="status"></div>
+          <div id="deviceResultPanel" class="device-result-panel hidden"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
