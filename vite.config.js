@@ -1,17 +1,26 @@
 import { defineConfig, loadEnv } from 'vite';
-import deviceSpecsHandler from './api/device-specs.js';
 
 function localDeviceSpecsPlugin() {
   return {
     name: 'local-device-specs-api',
     configureServer(server) {
-      server.middlewares.use('/api/device-specs', (req, res) => {
-        deviceSpecsHandler(req, res);
+      server.middlewares.use('/api/device-specs', async (req, res, next) => {
+        try {
+          const mod = await server.ssrLoadModule('/api/device-specs.js');
+          await mod.default(req, res);
+        } catch (err) {
+          next(err);
+        }
       });
     },
     configurePreviewServer(server) {
-      server.middlewares.use('/api/device-specs', (req, res) => {
-        deviceSpecsHandler(req, res);
+      server.middlewares.use('/api/device-specs', async (req, res, next) => {
+        try {
+          const mod = await import('./api/device-specs.js');
+          await mod.default(req, res);
+        } catch (err) {
+          next(err);
+        }
       });
     }
   };

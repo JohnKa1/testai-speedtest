@@ -1,0 +1,213 @@
+/* ============================================================================
+   BASE, CONTAINER, TOPBAR & SUPERFÍCIES DE CARD NÍVEL 1
+============================================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--bg-0);
+  color: var(--text-1);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.hidden {
+  display: none !important;
+}
+
+body[data-ui-mode='simple'] .adv-only {
+  display: none !important;
+}
+
+.app-shell {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: clamp(var(--sp-4), 2.5vw, var(--sp-6));
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+body[data-ui-mode='simple'] .app-shell {
+  max-width: 960px;
+}
+
+body[data-ui-mode='advanced'] .app-shell {
+  max-width: 1120px;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+/* ============================================================================
+   TOPBAR & SELETOR SIMPLES | AVANÇADO
+============================================================================ */
+
+.topbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.topbar h1 {
+  font-size: clamp(1.7rem, 3vw, 2.25rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.topbar h1 span {
+  color: var(--brand);
+}
+
+.badge-pro {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-pill);
+}
+
+.brand-subtitle {
+  color: var(--text-2);
+  font-size: var(--fs-body);
+  margin-top: var(--sp-1);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.mode-switcher {
+  display: inline-flex;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  padding: var(--sp-1);
+}
+
+.mode-btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.mode-btn.active {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+.status-pills {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-label);
+  color: var(--text-2);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.status-dot.offline {
+  background: var(--bad);
+}
+
+/* Cards de nível 1 + prevenção universal de estouro em itens de grid */
+.card {
+  min-width: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: clamp(var(--sp-4), 2.2vw, var(--sp-5));
+}
+
+.simple-summary-grid > *,
+.capabilities-grid > *,
+.device-bands-grid > *,
+.device-tiers-grid > *,
+.device-specs-grid > *,
+.metrics-grid > *,
+.diag-structured-grid > *,
+.gaming-pillars-grid > *,
+.gaming-genres-grid > *,
+.tech-meta-grid > *,
+.context-drawer > * {
+  min-width: 0;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-2);
+  padding: var(--sp-6) var(--sp-4);
+}
+
+.empty-state-text {
+  max-width: 65ch;
+  margin: 0 auto;
+}

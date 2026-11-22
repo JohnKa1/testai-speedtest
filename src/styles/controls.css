@@ -1,0 +1,292 @@
+/* ============================================================================
+   CONTROLES, BOTÕES, FOCO, BARRA DE PROGRESSO & BANNER DE STATUS
+============================================================================ */
+
+.control-bar {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: var(--sp-4);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-3);
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.control-label {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.control-select,
+.control-input {
+  width: 100%;
+  background: var(--surface-2);
+  color: var(--text-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-item);
+  padding: 0.625rem var(--sp-3);
+  font-size: var(--fs-body);
+  font-family: inherit;
+  min-height: 44px;
+}
+
+.control-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.control-actions button {
+  width: 100%;
+}
+
+.context-drawer {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+.control-select:focus-visible,
+.control-input:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible,
+[data-tip]:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+input[type='checkbox'] {
+  min-width: 20px;
+  min-height: 20px;
+  accent-color: var(--info);
+  cursor: pointer;
+}
+
+.btn-primary {
+  min-height: 46px;
+  max-width: 100%;
+  padding: var(--sp-3) var(--sp-5);
+  border: none;
+  border-radius: var(--r-item);
+  background: var(--brand);
+  color: var(--brand-ink);
+  box-shadow: none;
+  font-size: 1rem;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+  white-space: normal;
+  text-align: center;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.96);
+}
+
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
+}
+
+.btn-primary.cancel {
+  background: var(--bad-bg);
+  color: var(--bad);
+  border: 1px solid var(--bad);
+}
+
+.btn-hero {
+  min-width: min(100%, 260px);
+  min-height: 52px;
+  font-size: 1.05rem;
+  border-radius: var(--r-pill);
+}
+
+.btn-secondary {
+  min-height: 44px;
+  max-width: 100%;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-item);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-1);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: normal;
+  text-align: center;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+  color: var(--text-1);
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-secondary.has-context {
+  background: var(--info-bg);
+  border-color: var(--info);
+  color: var(--info);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.btn-link-toggle {
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: var(--sp-2) 0;
+  margin-bottom: var(--sp-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.btn-link-toggle:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}
+
+.btn-danger-outline {
+  min-height: 44px;
+  max-width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-item);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--bad);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: normal;
+  text-align: center;
+}
+
+.btn-mini-danger {
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-item);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--bad);
+  font-size: var(--fs-label);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ============================================================================
+   PROGRESSO E BANNER
+============================================================================ */
+
+.progress-wrap {
+  position: relative;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-item);
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-4);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: var(--info-bg);
+  transition: width 0.2s ease-out;
+}
+
+.progress-meta {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.progress-label {
+  font-size: var(--fs-label);
+  color: var(--text-2);
+}
+
+.progress-percent {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+
+.status-banner {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-item);
+  font-size: var(--fs-body);
+  background: var(--surface-2);
+  border: none;
+  border-left: 3px solid var(--info);
+  color: var(--text-1);
+}
+
+.status-banner.severity-good {
+  background: var(--ok-bg);
+  border-left-color: var(--ok);
+  color: var(--ok);
+}
+
+.status-banner.severity-warning {
+  background: var(--warn-bg);
+  border-left-color: var(--warn);
+  color: var(--warn);
+}
+
+.status-banner.severity-danger {
+  background: var(--bad-bg);
+  border-left-color: var(--bad);
+  color: var(--bad);
+}
+
+.status-banner.severity-info {
+  background: var(--info-bg);
+  border-left-color: var(--info);
+  color: var(--info);
+}

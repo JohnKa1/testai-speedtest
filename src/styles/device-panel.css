@@ -1,0 +1,299 @@
+/* ============================================================================
+   INTELIGÊNCIA DE DISPOSITIVOS
+============================================================================ */
+
+.device-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.device-card h2 {
+  font-size: 1.1875rem;
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.device-card .diag-badge {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.device-search-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-3);
+  align-items: end;
+}
+
+.device-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.chip-btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.chip-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+  color: var(--text-1);
+}
+
+.device-feedback {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-item);
+  font-size: var(--fs-body);
+  background: var(--warn-bg);
+  border: none;
+  border-left: 3px solid var(--warn);
+  color: var(--warn);
+}
+
+.device-feedback.tone-info {
+  background: var(--info-bg);
+  border-left-color: var(--info);
+  color: var(--info);
+}
+
+.device-feedback.tone-warning {
+  background: var(--warn-bg);
+  border-left-color: var(--warn);
+  color: var(--warn);
+}
+
+.device-feedback.tone-danger {
+  background: var(--bad-bg);
+  border-left-color: var(--bad);
+  color: var(--bad);
+}
+
+.device-feedback.tone-good {
+  background: var(--ok-bg);
+  border-left-color: var(--ok);
+  color: var(--ok);
+}
+
+.device-result-panel {
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.device-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.device-header-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.device-result-title {
+  font-size: var(--fs-title);
+  font-weight: 700;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.device-result-variant {
+  font-size: var(--fs-label);
+  color: var(--text-2);
+}
+
+/* Seção de Médias Reais por Banda Wi-Fi */
+.device-bands-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.device-bands-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.device-bands-title {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.device-bands-subtitle {
+  font-size: var(--fs-label);
+  color: var(--text-2);
+}
+
+.device-bands-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-3);
+}
+
+.device-band-card {
+  min-width: 0;
+  background: var(--surface-2);
+  border: none;
+  border-radius: var(--r-item);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  transition: background-color 0.16s ease-out;
+}
+
+.device-band-card.unsupported {
+  background: var(--bg-1);
+}
+
+.device-band-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.device-band-label {
+  min-width: 0;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.device-band-pill {
+  flex-shrink: 0;
+  white-space: nowrap;
+  max-width: 100%;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-pill);
+}
+
+.device-band-pill.tone-good {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.device-band-pill.tone-muted {
+  background: var(--surface-1);
+  color: var(--text-3);
+}
+
+.device-band-val-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.device-band-speed {
+  font-family: var(--mono);
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+
+.device-band-card.supported .device-band-speed {
+  color: var(--text-1);
+}
+
+.device-band-card.unsupported .device-band-speed {
+  color: var(--text-2);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.device-band-typical {
+  font-size: var(--fs-label);
+  color: var(--text-2);
+}
+
+.device-band-note {
+  font-size: var(--fs-label);
+  color: var(--text-2);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.device-band-card.unsupported .device-band-note {
+  color: var(--text-3);
+}
+
+.device-tiers-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-3);
+}
+
+.device-tier-box {
+  min-width: 0;
+  background: var(--surface-2);
+  border: none;
+  border-radius: var(--r-item);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.device-tier-label {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.device-tier-val {
+  font-size: var(--fs-body);
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.device-tier-note {
+  font-size: var(--fs-label);
+  color: var(--text-2);
+  line-height: 1.4;
+  margin-top: var(--sp-1);
+}
+
+.device-specs-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-3);
+}
+
+.device-provenance {
+  font-size: var(--fs-label);
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}

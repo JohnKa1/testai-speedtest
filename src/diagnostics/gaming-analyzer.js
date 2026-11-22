@@ -9,9 +9,16 @@ import { GAMING_THRESHOLDS } from '../config/speedtest.config.js';
 import { METRIC_STATUS } from '../utils/validators.js';
 import { formatDeltaMs, formatLatency } from '../utils/formatters.js';
 
+/**
+ * @param {import('../types.js').SpeedTestResult} result
+ * @param {Record<string, any>} [customThresholds]
+ * @returns {import('../types.js').GamingResult}
+ */
 export function evaluateGamingReadiness(result, customThresholds = {}) {
   const t = { ...GAMING_THRESHOLDS, ...customThresholds };
-  const m = result?.metrics || {};
+  const m = /** @type {Partial<import('../types.js').SpeedTestMetrics>} */ (
+    result?.metrics || {}
+  );
 
   const ping = m.ping?.status === METRIC_STATUS.MEASURED ? m.ping.value : null;
   const jitter = m.jitter?.status === METRIC_STATUS.MEASURED ? m.jitter.value : null;
@@ -49,6 +56,7 @@ export function evaluateGamingReadiness(result, customThresholds = {}) {
   const maxLoadedJitter = Math.max(jitter ?? 0, dlJitter ?? 0, ulJitter ?? 0);
 
   let verdictCode = 'competitive';
+  /** @type {'good' | 'warning' | 'danger'} */
   let severity = 'good';
   let badge = 'PRONTO PARA COMPETITIVO';
   let title = 'Características altamente favoráveis para jogos online';
@@ -133,6 +141,7 @@ export function evaluateGamingReadiness(result, customThresholds = {}) {
     }
   ];
 
+  /** @type {import('../types.js').GamingGenreFit[]} */
   const genres = [
     {
       category: 'FPS Tático & Battle Royale (ex.: CS2, Valorant, Fortnite, PUBG)',
@@ -144,6 +153,14 @@ export function evaluateGamingReadiness(result, customThresholds = {}) {
           : ping <= t.pingPlayableMax
             ? 'Viável com rede dedicada'
             : 'Sujeito a atraso competitivo',
+      tone:
+        ping <= t.pingCompetitiveMax &&
+        (jitter ?? 0) <= t.jitterCompetitiveMax &&
+        maxDelta <= t.loadedDeltaPlayableMax
+          ? 'good'
+          : ping <= t.pingPlayableMax
+            ? 'warning'
+            : 'danger',
       note: 'Exigem jitter mínimo e ausência de picos durante trocas de tiros. Utilize cabo Ethernet sempre que possível.'
     },
     {
@@ -152,11 +169,13 @@ export function evaluateGamingReadiness(result, customThresholds = {}) {
         ping <= t.pingPlayableMax && (jitter ?? 0) <= t.jitterPlayableMax
           ? 'Boa experiência'
           : 'Sensível a picos de jitter',
+      tone: ping <= t.pingPlayableMax && (jitter ?? 0) <= t.jitterPlayableMax ? 'good' : 'warning',
       note: 'Toleram ligeiramente mais latência fixa do que FPS, mas sofrem imediatamente com variação brusca de jitter.'
     },
     {
       category: 'MMORPG, Cooperativo & Casual',
       fit: ping <= 110 ? 'Plenamente adequado' : 'Atraso perceptível',
+      tone: ping <= 110 ? 'good' : 'warning',
       note: 'Funcionam bem mesmo em conexões intermediárias, desde que não haja queda de pacotes.'
     }
   ];

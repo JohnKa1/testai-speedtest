@@ -38,6 +38,12 @@ export function saveHistory(records, storage = window.localStorage) {
   }
 }
 
+/**
+ * @param {import('../types.js').SpeedTestResult} result
+ * @param {import('../types.js').DiagnosisResult} diagnosis
+ * @param {import('../types.js').GamingResult} gaming
+ * @returns {import('../types.js').HistoryRecord}
+ */
 export function toHistoryRecord(result, diagnosis, gaming) {
   const m = result.metrics;
   return {
@@ -49,8 +55,6 @@ export function toHistoryRecord(result, diagnosis, gaming) {
     context: result.context || {},
     downloadMbps: m.download?.value ?? null,
     uploadMbps: m.upload?.value ?? null,
-    peakDownloadMbps: m.peakDownload?.value ?? null,
-    peakUploadMbps: m.peakUpload?.value ?? null,
     pingMs: m.ping?.value ?? null,
     jitterMs: m.jitter?.value ?? null,
     downloadLatencyMs: m.downloadLatency?.value ?? null,
@@ -169,9 +173,21 @@ export function exportHistoryCsv(records) {
 
 /**
  * Gera laudo técnico completo em texto puro para suporte, NOC ou provedor.
+ * @param {import('../types.js').SpeedTestResult} result
+ * @param {import('../types.js').DiagnosisResult} diagnosis
+ * @param {import('../types.js').GamingResult} gaming
+ * @param {string} [notes]
+ * @returns {string}
  */
 export function buildTechnicalReportTxt(result, diagnosis, gaming, notes = '') {
   const m = result.metrics;
+  const dlP50Note = isNonNegativeNumber(result.stats?.download?.p50)
+    ? ` · P50: ${result.stats.download.p50.toFixed(1)} Mbps`
+    : '';
+  const ulP50Note = isNonNegativeNumber(result.stats?.upload?.p50)
+    ? ` · P50: ${result.stats.upload.p50.toFixed(1)} Mbps`
+    : '';
+
   const lines = [
     '====================================================================',
     'TESTAI — LAUDO TÉCNICO DE DIAGNÓSTICO DE REDE',
@@ -189,8 +205,8 @@ export function buildTechnicalReportTxt(result, diagnosis, gaming, notes = '') {
     '--------------------------------------------------------------------',
     '1. MÉTRICAS CONSOLIDADAS',
     '--------------------------------------------------------------------',
-    `Download (P90)        : ${formatSpeed(m.download?.value, 1, m.download?.status)} Mbps (Pico: ${formatSpeed(m.peakDownload?.value, 1, m.peakDownload?.status)} Mbps)`,
-    `Upload (P90)          : ${formatSpeed(m.upload?.value, 1, m.upload?.status)} Mbps (Pico: ${formatSpeed(m.peakUpload?.value, 1, m.peakUpload?.status)} Mbps)`,
+    `Download (Média)      : ${formatSpeed(m.download?.value, 1, m.download?.status)} Mbps${dlP50Note}`,
+    `Upload (Média)        : ${formatSpeed(m.upload?.value, 1, m.upload?.status)} Mbps${ulP50Note}`,
     `Latência Ociosa (P50) : ${formatLatency(m.ping?.value, 0, m.ping?.status)} ms`,
     `Jitter Ocioso         : ${formatLatency(m.jitter?.value, 1, m.jitter?.status)} ms`,
     `Latência sob Download : ${formatLatency(m.downloadLatency?.value, 0, m.downloadLatency?.status)} ms (${formatDeltaMs(m.downloadLatencyDelta?.value)})`,

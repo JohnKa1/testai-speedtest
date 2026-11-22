@@ -26,8 +26,30 @@ function prepareCanvas(canvas) {
   return { ctx, width, height };
 }
 
+function readCssToken(name, fallback) {
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') {
+    return fallback;
+  }
+  const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return val || fallback;
+}
+
+function resolveChartPalette() {
+  return {
+    text1: readCssToken('--text-1', '#F8FAFC'),
+    text2: readCssToken('--text-2', '#94A3B8'),
+    line: readCssToken('--line', '#1E293B'),
+    ok: readCssToken('--ok', '#10B981'),
+    seriesDown: readCssToken('--series-down', '#60A5FA'),
+    seriesUp: readCssToken('--series-up', '#8B5CF6'),
+    seriesDownFill: 'rgba(96, 165, 250, 0.14)',
+    seriesUpFill: 'rgba(139, 92, 246, 0.12)'
+  };
+}
+
 function drawEmptyState(ctx, width, height, message) {
-  ctx.fillStyle = '#8ba0bd';
+  const palette = resolveChartPalette();
+  ctx.fillStyle = palette.text2;
   ctx.font = '500 12px Inter, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -41,6 +63,7 @@ export function renderThroughputChart(canvas, downloadPoints = [], uploadPoints 
   const setup = prepareCanvas(canvas);
   if (!setup) return;
   const { ctx, width, height } = setup;
+  const palette = resolveChartPalette();
 
   const dl = Array.isArray(downloadPoints) ? downloadPoints : [];
   const ul = Array.isArray(uploadPoints) ? uploadPoints : [];
@@ -50,18 +73,25 @@ export function renderThroughputChart(canvas, downloadPoints = [], uploadPoints 
     return;
   }
 
-  const pad = { top: 24, right: 16, bottom: 26, left: 48 };
+  const pad = { top: 26, right: 16, bottom: 26, left: 54 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
 
   const allValues = [...dl.map((p) => p.mbps), ...ul.map((p) => p.mbps)].filter(isNonNegativeNumber);
   const maxVal = Math.max(10, ...allValues) * 1.12;
 
+  // Rótulo fixo de unidade no topo do eixo Y (sempre em Mbps)
+  ctx.fillStyle = palette.text2;
+  ctx.font = '600 11px "JetBrains Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Mbps', pad.left - 6, 11);
+
   // Grade horizontal
-  ctx.strokeStyle = 'rgba(139, 160, 189, 0.14)';
+  ctx.strokeStyle = palette.line;
   ctx.lineWidth = 1;
-  ctx.fillStyle = '#8ba0bd';
-  ctx.font = '400 10px "JetBrains Mono", monospace';
+  ctx.fillStyle = palette.text2;
+  ctx.font = '500 11px "JetBrains Mono", monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
 
@@ -76,9 +106,7 @@ export function renderThroughputChart(canvas, downloadPoints = [], uploadPoints 
     ctx.lineTo(pad.left + plotW, y);
     ctx.stroke();
 
-    const formatted =
-      labelVal >= 1000 ? `${(labelVal / 1000).toFixed(1)}G` : `${labelVal.toFixed(0)}M`;
-    ctx.fillText(formatted, pad.left - 6, y);
+    ctx.fillText(String(Math.round(labelVal)), pad.left - 6, y);
   }
 
   const drawSeries = (points, strokeColor, fillColor) => {
@@ -120,19 +148,31 @@ export function renderThroughputChart(canvas, downloadPoints = [], uploadPoints 
     });
   };
 
-  drawSeries(dl, '#00d4ff', 'rgba(0, 212, 255, 0.12)');
-  drawSeries(ul, '#00e676', 'rgba(0, 230, 118, 0.10)');
+  drawSeries(dl, palette.seriesDown, palette.seriesDownFill);
+  drawSeries(ul, palette.seriesUp, palette.seriesUpFill);
 
-  // Legenda superior
-  ctx.font = '600 10px Inter, sans-serif';
+  // Legenda superior com marcador colorido e texto em --text-1 (evita violeta em texto pequeno)
+  ctx.font = '600 11px Inter, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#00d4ff';
-  ctx.fillText(`● Download (${dl.length} pts)`, pad.left, 11);
-  ctx.fillStyle = '#00e676';
-  ctx.fillText(`● Upload (${ul.length} pts)`, pad.left + 125, 11);
+  ctx.textBaseline = 'middle';
 
-  ctx.fillStyle = '#8ba0bd';
-  ctx.font = '400 10px Inter, sans-serif';
+  const dlText = `Download (${dl.length} pts)`;
+  const ulText = `Upload (${ul.length} pts)`;
+
+  ctx.fillStyle = palette.seriesDown;
+  ctx.fillText('●', pad.left, 11);
+  const dotW = ctx.measureText('● ').width;
+  ctx.fillStyle = palette.text1;
+  ctx.fillText(dlText, pad.left + dotW, 11);
+
+  const ulStartX = pad.left + dotW + ctx.measureText(dlText).width + 16;
+  ctx.fillStyle = palette.seriesUp;
+  ctx.fillText('●', ulStartX, 11);
+  ctx.fillStyle = palette.text1;
+  ctx.fillText(ulText, ulStartX + dotW, 11);
+
+  ctx.fillStyle = palette.text2;
+  ctx.font = '500 11px Inter, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('Sequência real de amostras coletadas (Mbps)', pad.left + plotW / 2, height - 8);
 }
@@ -144,6 +184,7 @@ export function renderLatencyComparisonChart(canvas, telemetry) {
   const setup = prepareCanvas(canvas);
   if (!setup) return;
   const { ctx, width, height } = setup;
+  const palette = resolveChartPalette();
 
   const m = telemetry?.metrics || {};
   const stats = telemetry?.stats || {};
@@ -154,21 +195,21 @@ export function renderLatencyComparisonChart(canvas, telemetry) {
       median: m.ping?.value ?? null,
       min: stats.unloadedLatency?.min ?? null,
       max: stats.unloadedLatency?.max ?? null,
-      color: '#00e676'
+      color: palette.ok
     },
     {
       label: 'Sob Download',
       median: m.downloadLatency?.value ?? null,
       min: stats.downloadLatency?.min ?? null,
       max: stats.downloadLatency?.max ?? null,
-      color: '#00d4ff'
+      color: palette.seriesDown
     },
     {
       label: 'Sob Upload',
       median: m.uploadLatency?.value ?? null,
       min: stats.uploadLatency?.min ?? null,
       max: stats.uploadLatency?.max ?? null,
-      color: '#f5a623'
+      color: palette.seriesUp
     }
   ];
 
@@ -182,15 +223,50 @@ export function renderLatencyComparisonChart(canvas, telemetry) {
   }
 
   const maxMs = Math.max(20, ...validValues) * 1.18;
-  const pad = { top: 20, right: 16, bottom: 28, left: 46 };
+  const pad = { top: 38, right: 16, bottom: 28, left: 50 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
 
+  // Legenda explicativa de barra sólida (Mediana) vs. haste (Mín–Máx)
+  const compact = width < 320;
+  const barLabel = compact ? 'Mediana' : 'Barra: Mediana (P50)';
+  const whiskerLabel = compact ? 'Mín–Máx' : 'Haste: Mín–Máx';
+
+  ctx.save();
+  ctx.font = '600 11px Inter, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+
+  const legendY = 12;
+  ctx.fillStyle = palette.seriesDown;
+  ctx.globalAlpha = 0.85;
+  ctx.fillRect(pad.left, legendY - 4, 10, 8);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = palette.text2;
+  ctx.fillText(barLabel, pad.left + 15, legendY);
+
+  const barLegendW = ctx.measureText(barLabel).width;
+  const whiskerX = pad.left + 15 + barLegendW + 18;
+  ctx.strokeStyle = palette.text1;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(whiskerX, legendY - 5);
+  ctx.lineTo(whiskerX, legendY + 5);
+  ctx.moveTo(whiskerX - 3, legendY - 5);
+  ctx.lineTo(whiskerX + 3, legendY - 5);
+  ctx.moveTo(whiskerX - 3, legendY + 5);
+  ctx.lineTo(whiskerX + 3, legendY + 5);
+  ctx.stroke();
+
+  ctx.fillStyle = palette.text2;
+  ctx.fillText(whiskerLabel, whiskerX + 8, legendY);
+  ctx.restore();
+
   // Grade
-  ctx.strokeStyle = 'rgba(139, 160, 189, 0.14)';
+  ctx.strokeStyle = palette.line;
   ctx.lineWidth = 1;
-  ctx.fillStyle = '#8ba0bd';
-  ctx.font = '400 10px "JetBrains Mono", monospace';
+  ctx.fillStyle = palette.text2;
+  ctx.font = '500 11px "JetBrains Mono", monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
 
@@ -201,7 +277,7 @@ export function renderLatencyComparisonChart(canvas, telemetry) {
     ctx.moveTo(pad.left, y);
     ctx.lineTo(pad.left + plotW, y);
     ctx.stroke();
-    ctx.fillText(`${(ratio * maxMs).toFixed(0)}ms`, pad.left - 6, y);
+    ctx.fillText(`${(ratio * maxMs).toFixed(0)} ms`, pad.left - 6, y);
   }
 
   const slotW = plotW / categories.length;
@@ -211,7 +287,8 @@ export function renderLatencyComparisonChart(canvas, telemetry) {
     const centerX = pad.left + slotW * i + slotW / 2;
 
     if (isNonNegativeNumber(cat.median)) {
-      const barH = (cat.median / maxMs) * plotH;
+      const rawBarH = (cat.median / maxMs) * plotH;
+      const barH = cat.median > 0 ? Math.max(2, rawBarH) : 0;
       const barY = pad.top + plotH - barH;
 
       ctx.fillStyle = cat.color;
@@ -219,34 +296,44 @@ export function renderLatencyComparisonChart(canvas, telemetry) {
       ctx.fillRect(centerX - barW / 2, barY, barW, barH);
       ctx.globalAlpha = 1;
 
-      // Haste de variação real (mín–máx) se disponível
-      if (isNonNegativeNumber(cat.min) && isNonNegativeNumber(cat.max) && cat.max >= cat.min) {
+      const hasWhisker =
+        isNonNegativeNumber(cat.min) && isNonNegativeNumber(cat.max) && cat.max >= cat.min;
+      let yMax = barY;
+
+      // Haste de variação real (mín–máx)
+      if (hasWhisker) {
         const yMin = pad.top + plotH - (cat.min / maxMs) * plotH;
-        const yMax = pad.top + plotH - (cat.max / maxMs) * plotH;
-        ctx.strokeStyle = '#e8f0fe';
+        yMax = pad.top + plotH - (cat.max / maxMs) * plotH;
+        ctx.strokeStyle = palette.text1;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(centerX, yMin);
         ctx.lineTo(centerX, yMax);
         ctx.moveTo(centerX - 5, yMax);
         ctx.lineTo(centerX + 5, yMax);
+        ctx.moveTo(centerX - 4, yMin);
+        ctx.lineTo(centerX + 4, yMin);
         ctx.stroke();
       }
 
-      ctx.fillStyle = '#e8f0fe';
+      const topAnchorY = hasWhisker ? Math.min(barY, yMax) : barY;
+      ctx.fillStyle = palette.text1;
       ctx.font = '700 11px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(`${cat.median.toFixed(0)} ms`, centerX, Math.max(12, barY - 8));
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`${cat.median.toFixed(0)} ms`, centerX, Math.max(pad.top + 4, topAnchorY - 6));
     } else {
-      ctx.fillStyle = '#8ba0bd';
-      ctx.font = '500 11px "JetBrains Mono", monospace';
+      ctx.fillStyle = palette.text2;
+      ctx.font = '600 11px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText('N/D', centerX, pad.top + plotH - 12);
     }
 
-    ctx.fillStyle = '#8ba0bd';
+    ctx.fillStyle = palette.text2;
     ctx.font = '600 11px Inter, sans-serif';
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     ctx.fillText(cat.label, centerX, height - 10);
   });
 }
@@ -258,6 +345,7 @@ export function renderHistoryChart(canvas, records = []) {
   const setup = prepareCanvas(canvas);
   if (!setup) return;
   const { ctx, width, height } = setup;
+  const palette = resolveChartPalette();
 
   const ordered = [...records].reverse().slice(-15);
   if (ordered.length < 2) {
@@ -274,14 +362,20 @@ export function renderHistoryChart(canvas, records = []) {
   const ulVals = ordered.map((r) => r.uploadMbps).filter(isNonNegativeNumber);
   const maxVal = Math.max(10, ...dlVals, ...ulVals) * 1.15;
 
-  const pad = { top: 24, right: 16, bottom: 24, left: 48 };
+  const pad = { top: 26, right: 16, bottom: 24, left: 54 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
 
-  ctx.strokeStyle = 'rgba(139, 160, 189, 0.14)';
+  ctx.fillStyle = palette.text2;
+  ctx.font = '600 11px "JetBrains Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Mbps', pad.left - 6, 11);
+
+  ctx.strokeStyle = palette.line;
   ctx.lineWidth = 1;
-  ctx.fillStyle = '#8ba0bd';
-  ctx.font = '400 10px "JetBrains Mono", monospace';
+  ctx.fillStyle = palette.text2;
+  ctx.font = '500 11px "JetBrains Mono", monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
 
@@ -292,7 +386,7 @@ export function renderHistoryChart(canvas, records = []) {
     ctx.moveTo(pad.left, y);
     ctx.lineTo(pad.left + plotW, y);
     ctx.stroke();
-    ctx.fillText(`${(ratio * maxVal).toFixed(0)}M`, pad.left - 6, y);
+    ctx.fillText(String(Math.round(ratio * maxVal)), pad.left - 6, y);
   }
 
   const drawHistoryLine = (getter, color) => {
@@ -326,13 +420,22 @@ export function renderHistoryChart(canvas, records = []) {
     });
   };
 
-  drawHistoryLine((r) => r.downloadMbps, '#00d4ff');
-  drawHistoryLine((r) => r.uploadMbps, '#00e676');
+  drawHistoryLine((r) => r.downloadMbps, palette.seriesDown);
+  drawHistoryLine((r) => r.uploadMbps, palette.seriesUp);
 
-  ctx.font = '600 10px Inter, sans-serif';
+  ctx.font = '600 11px Inter, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#00d4ff';
-  ctx.fillText('● Download (Mbps)', pad.left, 11);
-  ctx.fillStyle = '#00e676';
-  ctx.fillText('● Upload (Mbps)', pad.left + 120, 11);
+  ctx.textBaseline = 'middle';
+
+  ctx.fillStyle = palette.seriesDown;
+  ctx.fillText('●', pad.left, 11);
+  const dotW = ctx.measureText('● ').width;
+  ctx.fillStyle = palette.text1;
+  ctx.fillText('Download (Mbps)', pad.left + dotW, 11);
+
+  const ulStartX = pad.left + dotW + ctx.measureText('Download (Mbps)').width + 16;
+  ctx.fillStyle = palette.seriesUp;
+  ctx.fillText('●', ulStartX, 11);
+  ctx.fillStyle = palette.text1;
+  ctx.fillText('Upload (Mbps)', ulStartX + dotW, 11);
 }

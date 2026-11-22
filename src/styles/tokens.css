@@ -1,0 +1,71 @@
+/* ============================================================================
+   TESTAI — TOKENS DO DESIGN SYSTEM (PALETA, TIPOGRAFIA, ESPAÇAMENTO, RAIOS)
+   Único arquivo onde literais hexadecimais / rgba() são permitidos.
+============================================================================ */
+
+:root {
+  /* Superfícies */
+  --bg-0: #0B0F19;
+  --bg-1: #0F1524;
+  --surface-1: #151C2C;
+  --surface-2: #1A2336;
+  --surface-hover: #222D45;
+  --line: #1E293B;
+  --line-strong: #334155;
+
+  /* Texto (WCAG 2.2 >= 4.5:1 para texto normal) */
+  --text-1: #F8FAFC;
+  --text-2: #94A3B8;
+  --text-3: #8392A7;
+
+  /* Marca / ação (somente logo, botão primário e foco de teclado) */
+  --brand: #00E5FF;
+  --brand-ink: #04101C;
+
+  /* Séries de dados (gráficos, gauge) — Opção 1: download em azul --info */
+  --series-down: #60A5FA;
+  --series-up: #8B5CF6;
+
+  /* Estado do resultado (somente significado de status, sempre com texto) */
+  --ok: #10B981;
+  --ok-bg: rgba(16, 185, 129, 0.12);
+  --warn: #FBBF24;
+  --warn-bg: rgba(251, 191, 36, 0.12);
+  --bad: #F87171;
+  --bad-bg: rgba(248, 113, 113, 0.12);
+  --info: #60A5FA;
+  --info-bg: rgba(96, 165, 250, 0.12);
+
+  /* Efeitos auxiliares */
+  --series-down-glow: rgba(96, 165, 250, 0.35);
+  --series-up-glow: rgba(139, 92, 246, 0.38);
+  --ok-glow: rgba(16, 185, 129, 0.35);
+  --warn-glow: rgba(251, 191, 36, 0.35);
+  --bad-glow: rgba(248, 113, 113, 0.35);
+  --skeleton-base: rgba(255, 255, 255, 0.04);
+  --skeleton-peak: rgba(255, 255, 255, 0.09);
+  --shadow-tooltip: rgba(0, 0, 0, 0.45);
+
+  /* Fontes & Tipografia (piso absoluto de 13px / 0.8125rem) */
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+  --fs-hero: clamp(3rem, 9vw, 5.5rem);
+  --fs-title: 1.375rem;
+  --fs-body: 0.9375rem;
+  --fs-label: 0.8125rem;
+
+  /* Escala de espaço (base 4px) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 40px;
+  --sp-8: 48px;
+
+  /* Raios */
+  --r-card: 16px;
+  --r-item: 12px;
+  --r-pill: 999px;
+}

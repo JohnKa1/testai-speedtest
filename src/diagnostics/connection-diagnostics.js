@@ -6,7 +6,13 @@
 
 import { DIAGNOSTIC_THRESHOLDS } from '../config/speedtest.config.js';
 import { isNonNegativeNumber, METRIC_STATUS } from '../utils/validators.js';
-import { computeStats, formatDeltaMs, formatLatency, formatSpeed } from '../utils/formatters.js';
+import {
+  computeStats,
+  formatDeltaMs,
+  formatLatency,
+  formatMetricWithUnit,
+  formatSpeed
+} from '../utils/formatters.js';
 
 export const DIAGNOSIS_CATALOG = Object.freeze({
   EXCELLENT: 'excellent',
@@ -23,8 +29,8 @@ export const DIAGNOSIS_CATALOG = Object.freeze({
 });
 
 /**
- * Calcula estatísticas de vazão sustentada filtrando sondas iniciais de aquecimento
- * (< 1 MB) afetadas por TCP Slow Start, mantendo fallback para todas as amostras.
+ * Calcula estatísticas de vazão sustentada priorizando janelas/blocos >= 1 MB
+ * para filtrar amostras mínimas iniciais, mantendo fallback automático em links lentos (< 8 Mbps).
  */
 function getSustainedThroughputStats(points, fallbackStats) {
   if (!Array.isArray(points) || points.length === 0) {
@@ -37,12 +43,25 @@ function getSustainedThroughputStats(points, fallbackStats) {
   return fallbackStats;
 }
 
+/**
+ * @param {import('../types.js').SpeedTestResult} result
+ * @param {Record<string, any>} [customThresholds]
+ * @returns {import('../types.js').DiagnosisResult}
+ */
 export function evaluateConnection(result, customThresholds = {}) {
   const t = { ...DIAGNOSTIC_THRESHOLDS, ...customThresholds };
-  const m = result?.metrics || {};
-  const stats = result?.stats || {};
-  const series = result?.series || {};
-  const ctx = result?.context || {};
+  const m = /** @type {Partial<import('../types.js').SpeedTestMetrics>} */ (
+    result?.metrics || {}
+  );
+  const stats = /** @type {Partial<import('../types.js').SpeedTestResult['stats']>} */ (
+    result?.stats || {}
+  );
+  const series = /** @type {Partial<import('../types.js').SpeedTestResult['series']>} */ (
+    result?.series || {}
+  );
+  const ctx = /** @type {Partial<import('../types.js').SpeedTestResult['context']>} */ (
+    result?.context || {}
+  );
 
   const dl = m.download?.status === METRIC_STATUS.MEASURED ? m.download.value : null;
   const ul = m.upload?.status === METRIC_STATUS.MEASURED ? m.upload.value : null;
@@ -95,30 +114,51 @@ export function evaluateConnection(result, customThresholds = {}) {
     pingSamples < t.minLatencyPoints;
 
   if (missingCore) {
+    const uploadFailedOnly =
+      dl !== null &&
+      ping !== null &&
+      (ul === null || m.upload?.status === METRIC_STATUS.FAILED || ulSamples < t.minThroughputPoints);
+
     return buildResult({
       code: DIAGNOSIS_CATALOG.INCONCLUSIVE,
       severity: 'warning',
-      title: 'Resultados inconclusivos ou medição parcial',
-      summary:
-        'Não foi possível reunir todas as amostras essenciais de download, upload e latência ociosa com estabilidade suficiente para um veredito definitivo.',
-      observed: `Download: ${formatSpeed(dl, 1, m.download?.status)} Mbps (${dlSamples} amostras) · Upload: ${formatSpeed(ul, 1, m.upload?.status)} Mbps (${ulSamples} amostras) · Ping ocioso: ${formatLatency(ping, 0, m.ping?.status)} ms (${pingSamples} amostras).`,
+      title: uploadFailedOnly
+        ? 'Medição parcial: falha no envio (upload) para a internet'
+        : 'Resultados inconclusivos ou medição parcial',
+      summary: uploadFailedOnly
+        ? 'O download e o ping foram medidos, mas o envio de dados deste dispositivo/rede local para a internet apresentou falha ou instabilidade antes da conclusão do teste.'
+        : 'Não foi possível reunir todas as amostras essenciais de download, upload e latência ociosa com estabilidade suficiente para um veredito definitivo.',
+      observed: `Download: ${formatMetricWithUnit(dl, 'Mbps', 1, m.download?.status)} (${dlSamples} amostras) · Upload: ${formatMetricWithUnit(ul, 'Mbps', 1, m.upload?.status)} (${ulSamples} amostras) · Ping ocioso: ${formatMetricWithUnit(ping, 'ms', 0, m.ping?.status)} (${pingSamples} amostras).`,
       basisMetrics: [
         'Completude das séries de download, upload e RTT ocioso',
         `Amostras coletadas: ↓ ${dlSamples}, ↑ ${ulSamples}, RTT ${pingSamples}`
       ],
-      meaning:
-        'Sem a conclusão integral das fases de carga e repouso, qualquer classificação de qualidade pode mascarar gargalos reais de subida ou degradação sob saturação.',
-      probableCauses: [
-        'Interrupção manual ou perda temporária de conectividade durante uma das etapas do teste.',
-        'Bloqueio parcial de requisições HTTP/TLS por firewall, extensão de navegador ou proxy.',
-        'Instabilidade severa no enlace local impedindo o fechamento das transferências maiores.'
-      ],
-      userActions: [
-        'Repita o teste completo sem pausar ou alternar redes durante a execução.',
-        'Desative temporariamente VPNs, proxies ou bloqueadores de script que possam interromper sondagens.'
-      ],
-      confirmatoryTest:
-        'Executar uma nova rodada completa no perfil Padrão Adaptativo com abas e downloads em segundo plano encerrados.',
+      meaning: uploadFailedOnly
+        ? 'Sem concluir a etapa de envio (upload), não é possível confirmar a qualidade de videochamadas, lives ou backups — o gargalo pode estar no caminho de saída do dispositivo ou rede local para a internet (Wi-Fi, sinal ou bloqueios), sem indicar automaticamente falha no provedor.'
+        : 'Sem a conclusão integral das fases de carga e repouso, qualquer classificação de qualidade pode mascarar gargalos reais de subida ou degradação sob saturação.',
+      probableCauses: uploadFailedOnly
+        ? [
+            'Atenuação ou interferência no sinal Wi-Fi no canal de retorno (upstream) do dispositivo até o roteador.',
+            'Bloqueio, inspeção de tráfego ou interrupção de requisições POST por VPN, firewall, proxy ou extensão de navegador.',
+            'Saturação temporária no envio por backups/sincronizações locais ou instabilidade momentânea no enlace.'
+          ]
+        : [
+            'Interrupção manual ou perda temporária de conectividade durante uma das etapas do teste.',
+            'Bloqueio parcial de requisições HTTP/TLS por firewall, extensão de navegador ou proxy.',
+            'Instabilidade severa no enlace local impedindo o fechamento das transferências maiores.'
+          ],
+      userActions: uploadFailedOnly
+        ? [
+            'Repita o teste próximo ao roteador (em Wi-Fi 5/6 GHz) ou via cabo Ethernet para isolar o caminho de envio do dispositivo.',
+            'Desative temporariamente VPNs, proxies ou bloqueadores e pause uploads em segundo plano antes de acionar o suporte.'
+          ]
+        : [
+            'Repita o teste completo sem pausar ou alternar redes durante a execução.',
+            'Desative temporariamente VPNs, proxies ou bloqueadores de script que possam interromper sondagens.'
+          ],
+      confirmatoryTest: uploadFailedOnly
+        ? 'Executar novamente próximo ao roteador ou via cabo Ethernet para confirmar se o envio do dispositivo/rede local estabiliza.'
+        : 'Executar uma nova rodada completa no perfil Padrão Adaptativo com abas e downloads em segundo plano encerrados.',
       secondaryFindings: []
     });
   }
@@ -289,10 +329,10 @@ export function evaluateConnection(result, customThresholds = {}) {
       severity: 'warning',
       priority: 76,
       title: 'Instabilidade de vazão durante download',
-      summary: `Os blocos sustentados de download oscilaram significativamente (mín. ${formatSpeed(sustainedDlStats?.min)} Mbps, P90 ${formatSpeed(dl)} Mbps, máx. ${formatSpeed(sustainedDlStats?.max)} Mbps).`,
+      summary: `Os blocos sustentados de download oscilaram significativamente (mín. ${formatSpeed(sustainedDlStats?.min)} Mbps, mediana ${formatSpeed(dl)} Mbps, média ${formatSpeed(sustainedDlStats?.mean)} Mbps).`,
       observed: `Coeficiente de variação de ${(dlCv * 100).toFixed(0)}% nos blocos de carga sustentada e jitter sob download de ${formatLatency(dlJitter, 1)} ms.`,
       basisMetrics: [
-        `Download P90: ${formatSpeed(dl)} Mbps (blocos ≥ 1 MB: ${formatSpeed(sustainedDlStats?.min)}–${formatSpeed(sustainedDlStats?.max)} Mbps)`,
+        `Download (Mediana): ${formatSpeed(dl)} Mbps (média sustentada: ${formatSpeed(sustainedDlStats?.mean)} Mbps)`,
         `Jitter sob download: ${formatLatency(dlJitter, 1)} ms`
       ],
       meaning:
@@ -316,23 +356,23 @@ export function evaluateConnection(result, customThresholds = {}) {
       code: DIAGNOSIS_CATALOG.UPLOAD_INSTABILITY,
       severity: 'warning',
       priority: 75,
-      title: 'Instabilidade de vazão durante upload',
-      summary: `Os blocos sustentados de upload oscilaram entre blocos (mín. ${formatSpeed(sustainedUlStats?.min)} Mbps, P90 ${formatSpeed(ul)} Mbps, máx. ${formatSpeed(sustainedUlStats?.max)} Mbps).`,
+      title: 'Instabilidade no envio (upload) para a internet',
+      summary: `A taxa de envio deste dispositivo/rede local para a internet oscilou significativamente entre os blocos (mín. ${formatSpeed(sustainedUlStats?.min)} Mbps, mediana ${formatSpeed(ul)} Mbps, média ${formatSpeed(sustainedUlStats?.mean)} Mbps).`,
       observed: `Coeficiente de variação de ${(ulCv * 100).toFixed(0)}% nos blocos sustentados de upload e jitter sob upload de ${formatLatency(ulJitter, 1)} ms.`,
       basisMetrics: [
-        `Upload P90: ${formatSpeed(ul)} Mbps (blocos ≥ 1 MB: ${formatSpeed(sustainedUlStats?.min)}–${formatSpeed(sustainedUlStats?.max)} Mbps)`,
+        `Upload (Mediana): ${formatSpeed(ul)} Mbps (média sustentada: ${formatSpeed(sustainedUlStats?.mean)} Mbps)`,
         `Jitter sob upload: ${formatLatency(ulJitter, 1)} ms`
       ],
       meaning:
         'Transmissões ao vivo (lives), envio de arquivos grandes e videochamadas com câmera em alta definição podem sofrer quedas de taxa de bits.',
       probableCauses: [
-        'Hipótese: atenuação no canal de retorno (upstream) do enlace ou limitação de potência de transmissão do cliente Wi-Fi.',
-        'Hipótese: política de controle de banda (shaping/policing) do provedor com descarte abrupto de rajadas.',
-        'Hipótese: sincronização em nuvem ativa em segundo plano.'
+        'Hipótese de dispositivo/rede local: limitação de potência de transmissão do rádio Wi-Fi do aparelho ou atenuação/interferência no caminho de envio até o roteador.',
+        'Hipótese local: sincronizações em nuvem ou uploads concorrentes disputando a fila de saída.',
+        'Hipótese alternativa (a validar após teste cabeado): controle de rajadas (shaping/policing) ou instabilidade no retorno do enlace.'
       ],
       userActions: [
-        'Verifique serviços como OneDrive, Google Drive, iCloud ou backups automáticos durante transmissões.',
-        'Teste via conexão cabeada para descartar assimetria de potência do rádio Wi-Fi do dispositivo.'
+        'Verifique serviços como OneDrive, Google Drive, iCloud ou backups automáticos ativos no aparelho e na rede local.',
+        'Teste próximo ao roteador ou via conexão cabeada antes de acionar o provedor para descartar perda de envio no Wi-Fi do dispositivo.'
       ],
       confirmatoryTest:
         'Realizar um teste isolado via cabo Ethernet e observar se o jitter sob upload permanece abaixo de 15 ms.'
@@ -381,34 +421,55 @@ export function evaluateConnection(result, customThresholds = {}) {
         ? ` (${(contractedRatio * 100).toFixed(0)}% dos ${ctx.contractedMbps} Mbps informados)`
         : '';
     const dlAvg = sustainedDlStats?.mean ?? stats.download?.mean ?? dl;
+    const onlyUploadLimited =
+      ul < t.lowUploadMbps &&
+      dl >= t.lowDownloadMbps &&
+      (contractedRatio === null || contractedRatio >= t.contractDeliveryRatioMin);
 
     findings.push({
       code: DIAGNOSIS_CATALOG.LIMITED_SPEED,
       severity: dl < 15 || ul < 3 ? 'danger' : 'warning',
       priority: 80,
-      title: 'Velocidade limitada abaixo do esperado',
-      summary: `A vazão medida registrou ${formatSpeed(dl)} Mbps de download${contractedText} e ${formatSpeed(ul)} Mbps de upload.`,
-      observed: `Download P90 em ${formatSpeed(dl)} Mbps (média ${formatSpeed(dlAvg)} Mbps) e Upload P90 em ${formatSpeed(ul)} Mbps.`,
+      title: onlyUploadLimited
+        ? 'Envio (upload) limitado do dispositivo/rede local para a internet'
+        : 'Velocidade limitada abaixo do esperado',
+      summary: onlyUploadLimited
+        ? `O download registrou ${formatSpeed(dl)} Mbps, mas a taxa de envio deste dispositivo/rede local para a internet ficou limitada em ${formatSpeed(ul)} Mbps.`
+        : `A vazão medida registrou ${formatSpeed(dl)} Mbps de download${contractedText} e ${formatSpeed(ul)} Mbps de upload.`,
+      observed: `Download (Mediana) em ${formatSpeed(dl)} Mbps (média ${formatSpeed(dlAvg)} Mbps) e Upload (Mediana) em ${formatSpeed(ul)} Mbps.`,
       basisMetrics: [
-        `Download P90: ${formatSpeed(dl)} Mbps (média ${formatSpeed(dlAvg)} Mbps)`,
-        `Upload P90: ${formatSpeed(ul)} Mbps`,
+        `Download (Mediana): ${formatSpeed(dl)} Mbps (média ${formatSpeed(dlAvg)} Mbps)`,
+        `Upload (Mediana): ${formatSpeed(ul)} Mbps`,
         ...(contractedRatio !== null
           ? [`Relação com plano declarado (${ctx.contractedMbps} Mbps): ${(contractedRatio * 100).toFixed(0)}%`]
           : [])
       ],
-      meaning:
-        'Downloads de arquivos grandes, backups em nuvem e múltiplas transmissões simultâneas em alta definição operarão com margem reduzida.',
-      probableCauses: [
-        'Hipótese de camada física: cabo de rede limitado a 100 Mbps (Fast Ethernet), adaptador Wi-Fi antigo ou sinal atenuado.',
-        'Hipótese de consumo concorrente: outros dispositivos utilizando parte expressiva da banda durante a medição.',
-        'Hipótese de provisionamento: perfil de banda aplicado pelo provedor ou congestionamento regional.'
-      ],
-      userActions: [
-        'Verifique a taxa de negociação física da placa de rede/Wi-Fi no sistema operacional.',
-        'Teste diretamente na saída LAN Gigabit da ONT/roteador principal com outros equipamentos desconectados.'
-      ],
-      confirmatoryTest:
-        'Testar via cabo Cat5e/Cat6 diretamente na porta Gigabit do roteador principal e registrar o laudo técnico caso permaneça abaixo de 80% do contratado.'
+      meaning: onlyUploadLimited
+        ? 'Embora a recepção esteja adequada, backups em nuvem, envio de arquivos pesados e chamadas de vídeo em alta resolução podem operar com margem reduzida.'
+        : 'Downloads de arquivos grandes, backups em nuvem e múltiplas transmissões simultâneas em alta definição operarão com margem reduzida.',
+      probableCauses: onlyUploadLimited
+        ? [
+            'Hipótese de dispositivo/rede local: limitação de transmissão no Wi-Fi do aparelho (ex.: 2,4 GHz, distância ou economia de bateria) ou cabo/porta local degradado.',
+            'Hipótese de consumo concorrente: backups automáticos, VPN ou outros dispositivos utilizando o envio da rede local.',
+            'Hipótese contratual/enlace (se persistir no cabo): perfil assimétrico do plano contratado ou gargalo de retorno.'
+          ]
+        : [
+            'Hipótese de camada física: cabo de rede limitado a 100 Mbps (Fast Ethernet), adaptador Wi-Fi antigo ou sinal atenuado.',
+            'Hipótese de consumo concorrente: outros dispositivos utilizando parte expressiva da banda durante a medição.',
+            'Hipótese de provisionamento: perfil de banda aplicado pelo provedor ou congestionamento regional.'
+          ],
+      userActions: onlyUploadLimited
+        ? [
+            'Verifique se há VPN, sincronização em nuvem ou economia de bateria limitando o envio do aparelho.',
+            'Repita o teste próximo ao roteador em 5/6 GHz ou via cabo Ethernet Gigabit antes de acionar o provedor.'
+          ]
+        : [
+            'Verifique a taxa de negociação física da placa de rede/Wi-Fi no sistema operacional.',
+            'Teste diretamente na saída LAN Gigabit da ONT/roteador principal com outros equipamentos desconectados.'
+          ],
+      confirmatoryTest: onlyUploadLimited
+        ? 'Testar via cabo Ethernet diretamente no roteador principal (com uploads em segundo plano pausados) para confirmar se o limite está no aparelho/Wi-Fi ou no perfil da linha.'
+        : 'Testar via cabo Cat5e/Cat6 diretamente na porta Gigabit do roteador principal e registrar o laudo técnico caso permaneça abaixo de 80% do contratado.'
     });
   }
 
@@ -431,7 +492,7 @@ export function evaluateConnection(result, customThresholds = {}) {
         summary: `A conexão entregou ${formatSpeed(dl)} Mbps de download e ${formatSpeed(ul)} Mbps de upload com baixa latência ociosa (${formatLatency(ping)} ms) e mínima variação sob saturação (${formatDeltaMs(dlDelta)} ↓ / ${formatDeltaMs(ulDelta)} ↑).`,
         observed: `Vazão sustentada (${formatSpeed(dl)} ↓ / ${formatSpeed(ul)} ↑ Mbps), jitter ocioso de ${formatLatency(jitter, 1)} ms e filas bem controladas durante carga máxima.`,
         basisMetrics: [
-          `Download P90: ${formatSpeed(dl)} Mbps · Upload P90: ${formatSpeed(ul)} Mbps`,
+          `Download (Mediana): ${formatSpeed(dl)} Mbps · Upload (Mediana): ${formatSpeed(ul)} Mbps`,
           `Ping ocioso: ${formatLatency(ping)} ms · Jitter: ${formatLatency(jitter, 1)} ms`,
           `Δ Latência sob carga: ${formatDeltaMs(dlDelta)} (↓) / ${formatDeltaMs(ulDelta)} (↑)`
         ],
@@ -457,7 +518,7 @@ export function evaluateConnection(result, customThresholds = {}) {
       summary: `Desempenho equilibrado com ${formatSpeed(dl)} Mbps de download, ${formatSpeed(ul)} Mbps de upload, ping ocioso de ${formatLatency(ping)} ms e variação controlada sob carga.`,
       observed: `Métricas de vazão, latência ociosa (${formatLatency(ping)} ms) e latência carregada (${formatLatency(dlLat)} ms ↓ / ${formatLatency(ulLat)} ms ↑) dentro de faixas saudáveis.`,
       basisMetrics: [
-        `Download P90: ${formatSpeed(dl)} Mbps · Upload P90: ${formatSpeed(ul)} Mbps`,
+        `Download (Mediana): ${formatSpeed(dl)} Mbps · Upload (Mediana): ${formatSpeed(ul)} Mbps`,
         `Ping ocioso: ${formatLatency(ping)} ms · Jitter: ${formatLatency(jitter, 1)} ms`,
         `Δ Latência sob carga: ${formatDeltaMs(dlDelta)} (↓) / ${formatDeltaMs(ulDelta)} (↑)`
       ],

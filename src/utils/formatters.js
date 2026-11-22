@@ -28,6 +28,10 @@ export function calculateLatencyDelta(idleMs, loadedMs) {
 
 /**
  * Formata velocidade em Mbps com fallback explícito conforme status.
+ * @param {number | null | undefined} mbps
+ * @param {number} [decimals]
+ * @param {import('../types.js').MetricStatus} [status]
+ * @returns {string}
  */
 export function formatSpeed(mbps, decimals = 1, status = METRIC_STATUS.MEASURED) {
   if (status === METRIC_STATUS.PENDING) return '—';
@@ -51,12 +55,48 @@ export function formatAdaptiveSpeed(mbps) {
 
 /**
  * Formata latência ou jitter em ms.
+ * @param {number | null | undefined} ms
+ * @param {number} [decimals]
+ * @param {import('../types.js').MetricStatus} [status]
+ * @returns {string}
  */
 export function formatLatency(ms, decimals = 0, status = METRIC_STATUS.MEASURED) {
   if (status === METRIC_STATUS.PENDING) return '—';
   if (status === METRIC_STATUS.FAILED) return 'Falha';
   if (status === METRIC_STATUS.UNAVAILABLE || !isNonNegativeNumber(ms)) return 'N/D';
   return ms.toFixed(decimals);
+}
+
+/**
+ * Formata métrica com unidade apenas quando há valor medido válido,
+ * evitando saídas como "Falha Mbps" ou "N/D ms" em medições parciais.
+ * @param {number | null | undefined} value
+ * @param {string} unit
+ * @param {number} [decimals]
+ * @param {import('../types.js').MetricStatus} [status]
+ * @returns {string}
+ */
+export function formatMetricWithUnit(
+  value,
+  unit,
+  decimals = 1,
+  status = METRIC_STATUS.MEASURED
+) {
+  if (status === METRIC_STATUS.PENDING) return '—';
+  if (status === METRIC_STATUS.FAILED) return 'Falha';
+  if (status === METRIC_STATUS.UNAVAILABLE || !isNonNegativeNumber(value)) return 'N/D';
+  return `${value.toFixed(decimals)} ${unit}`;
+}
+
+/**
+ * Converte velocidade em Mbps para percentual visual (0–100) em escala logarítmica suave.
+ */
+export function computeGaugePercent(mbps) {
+  if (!isNonNegativeNumber(mbps) || mbps <= 0) {
+    return 0;
+  }
+  const pct = (Math.log10(mbps + 1) / Math.log10(1201)) * 100;
+  return Math.max(2, Math.min(100, Math.round(pct)));
 }
 
 /**
@@ -112,6 +152,32 @@ export function formatDateTime(isoString) {
   });
 }
 
+function percentileFromSorted(sorted, percentile = 0.5) {
+  const n = sorted.length;
+  if (n === 0) return null;
+  if (n === 1) return sorted[0];
+
+  const clamped = Math.min(1, Math.max(0, Number(percentile) || 0));
+  const idx = clamped * (n - 1);
+  const lower = Math.floor(idx);
+  const upper = Math.ceil(idx);
+  if (lower === upper) return sorted[lower];
+  const weight = idx - lower;
+  return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+}
+
+/**
+ * Calcula um percentil (0–1) a partir de um vetor numérico arbitrário.
+ * Retorna null quando não há amostras numéricas válidas.
+ */
+export function computePercentile(values, percentile = 0.5) {
+  if (!Array.isArray(values)) {
+    return null;
+  }
+  const valid = values.filter(isValidNumber).sort((a, b) => a - b);
+  return percentileFromSorted(valid, percentile);
+}
+
 /**
  * Calcula estatísticas descritivas reais a partir de um vetor numérico.
  * Nunca inventa amostras: retorna null quando o array está vazio.
@@ -128,16 +194,6 @@ export function computeStats(values) {
     return null;
   }
 
-  const percentile = (p) => {
-    if (n === 1) return valid[0];
-    const idx = p * (n - 1);
-    const lower = Math.floor(idx);
-    const upper = Math.ceil(idx);
-    if (lower === upper) return valid[lower];
-    const weight = idx - lower;
-    return valid[lower] * (1 - weight) + valid[upper] * weight;
-  };
-
   const sum = valid.reduce((acc, v) => acc + v, 0);
   const mean = sum / n;
   const variance = valid.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / n;
@@ -147,14 +203,73 @@ export function computeStats(values) {
   return {
     count: n,
     min: valid[0],
-    p10: percentile(0.1),
-    p50: percentile(0.5),
+    p10: percentileFromSorted(valid, 0.1),
+    p50: percentileFromSorted(valid, 0.5),
     mean,
-    p90: percentile(0.9),
-    p95: percentile(0.95),
+    p90: percentileFromSorted(valid, 0.9),
+    p95: percentileFromSorted(valid, 0.95),
     max: valid[n - 1],
     stdDev,
     cv
+  };
+}
+
+/**
+ * Calcula a média aritmética (Mbps) de uma série de amostras válidas.
+ */
+export function computeMeanMbps(points) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  const valid = points.map((pt) => pt?.mbps).filter(isNonNegativeNumber);
+  if (valid.length === 0) return null;
+  return valid.reduce((acc, v) => acc + v, 0) / valid.length;
+}
+
+/**
+ * Retorna o maior valor (Mbps) observado na série (pico pontual secundário).
+ */
+export function computePeakMbps(points) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  const valid = points.map((pt) => pt?.mbps).filter(isNonNegativeNumber);
+  if (valid.length === 0) return null;
+  return Math.max(...valid);
+}
+
+/**
+ * Resolve o valor principal (média sustentada) e o pico secundário de velocidade.
+ * Em falhas ou indisponibilidade preserva o status sem exibir unidade falsa.
+ */
+export function resolvePrimaryAndPeakSpeed(points, metric, statsObj = null) {
+  const meanFromSeries = computeMeanMbps(points);
+  const mean = isNonNegativeNumber(meanFromSeries)
+    ? meanFromSeries
+    : isNonNegativeNumber(statsObj?.mean)
+      ? statsObj.mean
+      : null;
+
+  const peakFromSeries = computePeakMbps(points);
+  const peak = isNonNegativeNumber(peakFromSeries)
+    ? peakFromSeries
+    : isNonNegativeNumber(statsObj?.max)
+      ? statsObj.max
+      : null;
+
+  if (metric?.status === METRIC_STATUS.MEASURED) {
+    const primary = isNonNegativeNumber(mean)
+      ? mean
+      : isNonNegativeNumber(metric.value)
+        ? metric.value
+        : null;
+    return {
+      primary,
+      peak,
+      status: isNonNegativeNumber(primary) ? METRIC_STATUS.MEASURED : METRIC_STATUS.UNAVAILABLE
+    };
+  }
+
+  return {
+    primary: null,
+    peak,
+    status: metric?.status || METRIC_STATUS.UNAVAILABLE
   };
 }
 
@@ -175,6 +290,13 @@ export function clearElement(el) {
   }
 }
 
+/**
+ * @template {keyof HTMLElementTagNameMap} K
+ * @param {K} tag
+ * @param {string} [className]
+ * @param {string | number | null} [text]
+ * @returns {HTMLElementTagNameMap[K]}
+ */
 export function createEl(tag, className = '', text = null) {
   const el = document.createElement(tag);
   if (className) {

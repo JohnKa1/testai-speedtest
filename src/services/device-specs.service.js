@@ -1,13 +1,17 @@
 /**
  * Serviço de consulta ONLINE de especificações e identificação de smartphones.
- * Camada 1: Proxy Serverless dedicado (/api/device-specs), se configurado.
+ * Camada 1: Proxy Serverless dedicado (/api/device-specs -> MobileAPI.dev com chave segura no servidor).
  * Camada 2: MediaWiki / Wikipedia Online (Infobox com desembrulhamento recursivo + seção técnica do artigo).
  * Camada 3: Google Play Certified Devices Registry via jsDelivr CDN (30.000+ modelos regionais/antigos).
- * Regra estrita: nenhum dado técnico ausente na fonte consultada é inventado ou estimado.
+ * A classificação (Básico / Médio / Alto Desempenho) e as médias por banda Wi-Fi são derivadas
+ * deterministicamente a partir do hardware, geração Wi-Fi e linha comercial do aparelho.
  */
 
-const sessionCache = new Map();
 let googlePlayCatalogPromise = null;
+
+function escapeRegExp(str) {
+  return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 const REQUEST_TIMEOUT_MS = 7000;
 const GOOGLE_PLAY_DEVICES_CDN = 'https://cdn.jsdelivr.net/gh/bsthen/device-models/devices.json';
@@ -19,6 +23,7 @@ const WIKI_ENDPOINTS = [
 
 export function sanitizeDeviceQuery(raw) {
   return String(raw ?? '')
+    .replace(/&nbsp;|&#0*160;|&#x0*a0;|\u00a0/gi, ' ')
     .replace(/[<>"'`\\]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -120,6 +125,7 @@ function cleanWikiMarkup(raw) {
     .replace(/\[\[(?:[^|\]]+\|)?([^\]]+)\]\]/g, '$1')
     .replace(/'''?/g, '')
     .replace(/\(\s*\)/g, '')
+    .replace(/&nbsp;|&#0*160;|&#x0*a0;|\u00a0/gi, ' ')
     .replace(/\s*,\s*/g, ', ')
     .replace(/(?:,\s*){2,}/g, ', ')
     .replace(/\s+/g, ' ')
@@ -197,17 +203,17 @@ function parseWifiSpecs(connectivityText) {
   const txt = String(connectivityText || '');
   let generation = null;
 
-  if (/802\.11\s*[a-z/]*be\b|wi-?fi\s*7\b/i.test(txt)) {
+  if (/802\.11\s*[a-z0-9/]*(?:be|\/7)\b|wi-?fi\s*7\b/i.test(txt)) {
     generation = 'Wi-Fi 7';
-  } else if (/wi-?fi\s*6e\b|6\s*ghz/i.test(txt)) {
+  } else if (/802\.11\s*[a-z0-9/]*\/6e\b|wi-?fi\s*6e\b|6\s*ghz/i.test(txt)) {
     generation = 'Wi-Fi 6E';
-  } else if (/802\.11\s*[a-z/]*ax\b|wi-?fi\s*6\b/i.test(txt)) {
+  } else if (/802\.11\s*[a-z0-9/]*(?:ax|\/6)\b|wi-?fi\s*6\b/i.test(txt)) {
     generation = 'Wi-Fi 6';
-  } else if (/802\.11\s*[a-z/]*ac\b|wi-?fi\s*5\b/i.test(txt)) {
+  } else if (/802\.11\s*[a-z0-9/]*ac\b|wi-?fi\s*5\b/i.test(txt)) {
     generation = 'Wi-Fi 5';
-  } else if (/802\.11\s*[a-z/]*n\b|wi-?fi\s*4\b/i.test(txt)) {
+  } else if (/802\.11\s*[a-z0-9/]*n\b|wi-?fi\s*4\b/i.test(txt)) {
     generation = 'Wi-Fi 4';
-  } else if (/802\.11\s*[bg]/i.test(txt)) {
+  } else if (/802\.11\s*[a-z0-9/]*[bg]\b/i.test(txt)) {
     generation = 'Wi-Fi 3 (802.11b/g)';
   }
 
@@ -218,11 +224,11 @@ function parseWifiSpecs(connectivityText) {
     /tri-?band|6\s*ghz/i.test(txt);
 
   if (txt) {
-    if (/2\.4\s*ghz|dual-?band|tri-?band|802\.11/i.test(txt)) {
+    if (/2\.4\s*ghz|dual-?band|tri-?band|802\.11|wi-?fi/i.test(txt)) {
       bands.push('2,4 GHz');
     }
     if (
-      /5\s*ghz|dual-?band|tri-?band|802\.11\s*[a-z/]*(?:a|ac|ax|be)\b/i.test(txt) ||
+      /5\s*ghz|dual-?band|tri-?band|802\.11\s*[a-z0-9/]*(?:a|ac|ax|be|\/6e?|\/7)\b/i.test(txt) ||
       ['Wi-Fi 5', 'Wi-Fi 6', 'Wi-Fi 6E', 'Wi-Fi 7'].includes(generation)
     ) {
       bands.push('5 GHz');
@@ -280,6 +286,7 @@ function normalizeDevicePayload(raw) {
   const model = sanitizeDeviceQuery(raw.model);
   if (!manufacturer && !model) return null;
 
+  const hwRaw = raw.hardware && typeof raw.hardware === 'object' ? raw.hardware : {};
   const wifiRaw = raw.wifi && typeof raw.wifi === 'object' ? raw.wifi : {};
   const cellRaw = raw.cellular && typeof raw.cellular === 'object' ? raw.cellular : {};
 
@@ -288,6 +295,10 @@ function normalizeDevicePayload(raw) {
     manufacturer: manufacturer || 'Fabricante não especificado',
     model: model || 'Modelo consultado',
     regionalVariant: sanitizeDeviceQuery(raw.regionalVariant) || 'Especificação Internacional / Comercial',
+    hardware: {
+      chipset: sanitizeDeviceQuery(hwRaw.chipset) || null,
+      ram: sanitizeDeviceQuery(hwRaw.ram) || null
+    },
     wifi: {
       generation: sanitizeDeviceQuery(wifiRaw.generation) || 'Informação não disponível',
       standards: sanitizeDeviceQuery(wifiRaw.standards) || 'Informação não disponível',
@@ -463,6 +474,14 @@ async function searchMediaWikiEndpoint(endpoint, query, queryTokens, fetchImpl) 
       const released = cleanReleasedLabel(
         extractInfoboxField(wikitext, ['released', 'lancamento', 'lançamento'])
       );
+      const chipset = extractInfoboxField(wikitext, [
+        'soc',
+        'chipset',
+        'cpu',
+        'processor',
+        'processador'
+      ]);
+      const ram = extractInfoboxField(wikitext, ['memory', 'ram', 'memoria', 'memória']);
 
       const fallbackSpecs = extractArticleFallbackSpecs(wikitext);
       const combinedConnectivity = [infoboxConn, fallbackSpecs.wifiText].filter(Boolean).join(', ');
@@ -495,7 +514,7 @@ async function searchMediaWikiEndpoint(endpoint, query, queryTokens, fetchImpl) 
 
       const cleanModel =
         primaryDisplayName
-          .replace(new RegExp(`^${detectedBrand}\\s*`, 'i'), '')
+          .replace(new RegExp(`^${escapeRegExp(detectedBrand)}\\s*`, 'i'), '')
           .replace(/[,;:\s]+$/g, '')
           .trim() || page.title;
 
@@ -507,6 +526,10 @@ async function searchMediaWikiEndpoint(endpoint, query, queryTokens, fetchImpl) 
         manufacturer: detectedBrand,
         model: cleanModel,
         regionalVariant: released ? `Lançamento: ${released}` : 'Ficha Técnica Internacional',
+        hardware: {
+          chipset: chipset || null,
+          ram: ram || null
+        },
         wifi,
         cellular,
         source: `${endpoint.label} — ${page.title}`,
@@ -552,7 +575,7 @@ async function loadGooglePlayRegistry(fetchImpl, registryUrl = GOOGLE_PLAY_DEVIC
         entries.push({
           code: String(code).trim(),
           brand: brand || fullName.split(' ')[0],
-          model: rawName.replace(new RegExp(`^${brand}\\s*`, 'i'), '').trim() || rawName || code,
+          model: rawName.replace(new RegExp(`^${escapeRegExp(brand)}\\s*`, 'i'), '').trim() || rawName || code,
           fullName,
           tokens: normalizeTokens(`${brand} ${rawName} ${code}`)
         });
@@ -658,15 +681,17 @@ export class DeviceSpecsService {
     this.proxyUrl = options.proxyUrl !== undefined ? options.proxyUrl : resolveSafeProxyUrl();
     this.fetchImpl = options.fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     this.googlePlayRegistryUrl = options.googlePlayRegistryUrl || GOOGLE_PLAY_DEVICES_CDN;
+    this.sessionCache = new Map();
   }
 
   getPopularModels() {
     return [
+      { manufacturer: 'Samsung', model: 'Galaxy A10' },
       { manufacturer: 'Samsung', model: 'Galaxy A06' },
-      { manufacturer: 'Samsung', model: 'Galaxy A72' },
-      { manufacturer: 'Samsung', model: 'Galaxy S25' },
       { manufacturer: 'Motorola', model: 'Moto E22' },
-      { manufacturer: 'Apple', model: 'iPhone 11' }
+      { manufacturer: 'Samsung', model: 'Galaxy A71' },
+      { manufacturer: 'Samsung', model: 'Galaxy S25 FE' },
+      { manufacturer: 'Apple', model: 'iPhone 16' }
     ];
   }
 
@@ -677,7 +702,7 @@ export class DeviceSpecsService {
         status: 'empty',
         device: null,
         origin: 'none',
-        message: 'Informe o fabricante e o modelo do aparelho (ex.: Galaxy A72, A06, S25, iPhone 11).'
+        message: 'Informe o fabricante e o modelo do aparelho (ex.: Galaxy A10, A06, A71, S25 FE).'
       };
     }
 
@@ -692,15 +717,15 @@ export class DeviceSpecsService {
 
     const queryTokens = normalizeTokens(query);
     const cacheKey = queryTokens.slice().sort().join(' ');
-    if (sessionCache.has(cacheKey)) {
-      return sessionCache.get(cacheKey);
+    if (this.sessionCache.has(cacheKey)) {
+      return this.sessionCache.get(cacheKey);
     }
 
-    // 1. Proxy serverless dedicado (MobileAPI.dev / TechSpecs API, se configurado no servidor)
+    // 1. Proxy serverless dedicado (MobileAPI.dev via /api/device-specs, se configurado no servidor)
     if (this.proxyUrl) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
         const separator = this.proxyUrl.includes('?') ? '&' : '?';
         const response = await this.fetchImpl(
           `${this.proxyUrl}${separator}q=${encodeURIComponent(query)}`,
@@ -710,7 +735,6 @@ export class DeviceSpecsService {
             signal: controller.signal
           }
         );
-        clearTimeout(timer);
 
         const contentType = response.headers?.get?.('content-type') || '';
         if (response.ok && (!contentType || contentType.includes('application/json'))) {
@@ -723,12 +747,14 @@ export class DeviceSpecsService {
               origin: 'proxy-api',
               message: null
             };
-            sessionCache.set(cacheKey, payload);
+            this.sessionCache.set(cacheKey, payload);
             return payload;
           }
         }
       } catch {
         // Segue automaticamente para as fontes online abertas
+      } finally {
+        clearTimeout(timer);
       }
     }
 
@@ -748,7 +774,7 @@ export class DeviceSpecsService {
             origin: 'wikipedia-online',
             message: null
           };
-          sessionCache.set(cacheKey, payload);
+          this.sessionCache.set(cacheKey, payload);
           return payload;
         }
       }
@@ -771,7 +797,7 @@ export class DeviceSpecsService {
           origin: 'google-play-registry',
           message: null
         };
-        sessionCache.set(cacheKey, payload);
+        this.sessionCache.set(cacheKey, payload);
         return payload;
       }
     } catch {
@@ -789,183 +815,5 @@ export class DeviceSpecsService {
       origin: 'online',
       message: `Nenhum aparelho encontrado para "${query}". Verifique a grafia do modelo ou informe o código homologado (ex.: SM-A065M).`
     };
-  }
-}
-
-function sanitizeQuery(raw) {
-  return String(raw ?? '')
-    .replace(/[<>"'`\\]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80);
-}
-
-function sendJson(res, statusCode, payload, cacheable = false) {
-  if (cacheable) {
-    res.setHeader('Cache-Control', 'public, s-maxage=43200, stale-while-revalidate=86400');
-  }
-  if (typeof res.status === 'function' && typeof res.json === 'function') {
-    return res.status(statusCode).json(payload);
-  }
-  res.statusCode = statusCode;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(payload));
-}
-
-function parseWifiGeneration(wifiText) {
-  const txt = String(wifiText || '');
-  if (/802\.11\s*[a-z/]*be\b|wi-?fi\s*7\b/i.test(txt)) return 'Wi-Fi 7';
-  if (/wi-?fi\s*6e\b|6\s*ghz/i.test(txt)) return 'Wi-Fi 6E';
-  if (/802\.11\s*[a-z/]*ax\b|wi-?fi\s*6\b/i.test(txt)) return 'Wi-Fi 6';
-  if (/802\.11\s*[a-z/]*ac\b|wi-?fi\s*5\b/i.test(txt)) return 'Wi-Fi 5';
-  if (/802\.11\s*[a-z/]*n\b|wi-?fi\s*4\b/i.test(txt)) return 'Wi-Fi 4';
-  if (/802\.11\s*[bg]/i.test(txt)) return 'Wi-Fi 3 (802.11b/g)';
-  return null;
-}
-
-function parseWifiBands(wifiText, generation) {
-  const txt = String(wifiText || '');
-  const bands = [];
-  const supports6Ghz =
-    generation === 'Wi-Fi 6E' ||
-    generation === 'Wi-Fi 7' ||
-    /tri-?band|6\s*ghz/i.test(txt);
-
-  if (txt) {
-    if (/2\.4\s*ghz|dual-?band|tri-?band|802\.11/i.test(txt)) bands.push('2,4 GHz');
-    if (
-      /5\s*ghz|dual-?band|tri-?band|802\.11\s*[a-z/]*(?:a|ac|ax|be)\b/i.test(txt) ||
-      ['Wi-Fi 5', 'Wi-Fi 6', 'Wi-Fi 6E', 'Wi-Fi 7'].includes(generation)
-    ) {
-      bands.push('5 GHz');
-    }
-    if (supports6Ghz) bands.push('6 GHz');
-  }
-  return [...new Set(bands)];
-}
-
-function extractBandsList(rawText) {
-  return String(rawText || '')
-    .split(/[,;/|]/)
-    .map((s) => s.trim())
-    .filter((s) => s && s.length <= 24);
-}
-
-export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    return sendJson(res, 405, { error: 'Method not allowed' });
-  }
-
-  const parsedUrl = new URL(req.url || '', 'http://localhost');
-  const rawQ = req.query?.q ?? parsedUrl.searchParams.get('q');
-  const query = sanitizeQuery(rawQ);
-
-  if (!query || query.length < 2) {
-    return sendJson(res, 400, { error: 'Consulta inválida' });
-  }
-
-  const cacheKey = query.toLowerCase();
-  const cached = memoryCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-    return sendJson(res, 200, cached.payload, true);
-  }
-
-  const mobileApiKey = process.env.MOBILEAPI_KEY;
-  if (!mobileApiKey) {
-    return sendJson(res, 503, { error: 'MOBILEAPI_KEY não configurada no servidor' });
-  }
-
-  try {
-    const apiUrl = new URL('https://api.mobileapi.dev/devices/search');
-    apiUrl.searchParams.set('name', query);
-    apiUrl.searchParams.set('key', mobileApiKey);
-
-    const resp = await fetch(apiUrl.toString(), {
-      method: 'GET',
-      headers: { Accept: 'application/json' }
-    });
-
-    if (!resp.ok) {
-      return sendJson(res, 502, { error: 'Falha ao consultar MobileAPI.dev' });
-    }
-
-    const data = await resp.json();
-    const list = Array.isArray(data?.devices)
-      ? data.devices
-      : Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data)
-          ? data
-          : data && typeof data === 'object'
-            ? [data]
-            : [];
-
-    const item = list.find((d) => d && (d.name || d.model));
-    if (!item) {
-      return sendJson(res, 404, { error: 'Dispositivo não encontrado na MobileAPI.dev' });
-    }
-
-    const comms = item.comms || item.communications || item.specifications?.comms || {};
-    const net = item.network || item.specifications?.network || {};
-
-    const wifiRaw = String(
-      item.wlan || comms.wlan || item.wifi || comms.wifi || item.connectivity || ''
-    ).trim();
-    const generation = parseWifiGeneration(wifiRaw);
-    const bands = parseWifiBands(wifiRaw, generation);
-
-    const raw4G = item['4g_bands'] || net['4g_bands'] || item.lte_bands || '';
-    const raw5G = item['5g_bands'] || net['5g_bands'] || '';
-    const netTech = `${item.network_technology || net.technology || ''} ${raw4G} ${raw5G}`;
-
-    const bands4G = extractBandsList(raw4G);
-    const bands5G = extractBandsList(raw5G);
-    const has5G = bands5G.length > 0 || /\b5g\b/i.test(netTech);
-    const has4G = bands4G.length > 0 || /\b4g\b|\blte\b/i.test(netTech);
-
-    const generations = [];
-    if (has4G) generations.push('4G LTE');
-    if (has5G) generations.push('5G');
-
-    const brand = String(item.brand_name || item.brand || item.manufacturer || '').trim() || 'Fabricante';
-    const rawModel = String(item.name || item.model || query).trim();
-    const cleanModel = rawModel.replace(new RegExp(`^${brand}\\s*`, 'i'), '').trim() || rawModel;
-
-    const payload = {
-      device: {
-        id: `mobileapi-${item.id || cleanModel}`,
-        manufacturer: brand,
-        model: cleanModel,
-        regionalVariant: item.release_date ? `Lançamento: ${item.release_date}` : 'Ficha Técnica Oficial',
-        wifi: {
-          generation: generation || 'Informação não disponível',
-          standards: wifiRaw || 'Informação não disponível',
-          bands,
-          supports6Ghz: bands.includes('6 GHz'),
-          channelWidthsMhz: null,
-          mimo: null,
-          theoreticalLinkMbps: null,
-          favorableRangeMbps: null
-        },
-        cellular: {
-          has4G,
-          has5G,
-          generations,
-          lteCategory: null,
-          carrierAggregation: null,
-          bands5G,
-          bands4G,
-          theoreticalDownMbps: null,
-          theoreticalUpMbps: null
-        },
-        source: 'MobileAPI.dev (Consulta Online)',
-        dataVersion: new Date().toISOString().slice(0, 10)
-      }
-    };
-
-    memoryCache.set(cacheKey, { ts: Date.now(), payload });
-    return sendJson(res, 200, payload, true);
-  } catch {
-    return sendJson(res, 500, { error: 'Erro interno na consulta de especificações' });
   }
 }

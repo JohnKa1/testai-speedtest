@@ -1,0 +1,125 @@
+/* ============================================================================
+   DESKTOP & TABLET BREAKPOINTS (PROGRESSIVE ENHANCEMENT) + REDUCED MOTION
+============================================================================ */
+
+@media (min-width: 720px) {
+  .topbar {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .topbar-right {
+    justify-content: flex-end;
+  }
+
+  .control-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .control-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .control-actions button {
+    width: auto;
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger-outline {
+    white-space: nowrap;
+  }
+
+  .btn-mini-danger {
+    min-height: 36px;
+  }
+
+  .context-drawer {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .simple-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .capabilities-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .device-search-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .device-bands-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .device-specs-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .live-panel {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .speed-display {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .current-speed-box,
+  .avg-box {
+    flex: 1;
+    width: auto;
+  }
+
+  .divider-v {
+    width: 1px;
+    height: 76px;
+  }
+
+  .metrics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .diag-structured-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gaming-pillars-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gaming-genres-grid,
+  .tech-meta-grid,
+  .device-tiers-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1025px) {
+  .telemetry-grid {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .gaming-pillars-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

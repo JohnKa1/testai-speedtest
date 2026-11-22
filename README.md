@@ -1,66 +1,150 @@
 # TestAi — Diagnóstico Inteligente de Conexão e Hardware
 
-Aplicação web moderna de diagnóstico avançado de conexão de internet e análise prática da capacidade de hardware de smartphones e dispositivos conectados.
+Aplicação web de diagnóstico de rede e análise comparativa de capacidade Wi-Fi/hardware de dispositivos. Projetada para entregar medições contínuas e resilientes para o usuário final (**Modo Simples**) e telemetria detalhada para análise técnica (**Modo Avançado / NOC**).
 
 ---
 
-## 🎯 Principais Funcionalidades
+## 1. Como o Sistema Funciona
 
-- **Medição Precisa de Vazão**: Download, Upload, Ping ocioso (RTT) e Jitter estatístico.
-- **Detecção de Bufferbloat (Latência sob Carga)**: Avaliação de variação de latência e jitter durante download e upload intensos.
-- **Cards Práticos de Cenários de Uso**: Separação clara entre a experiência de **Streaming 4K**, **Downloads Pesados**, **Jogos Online / Videochamadas** e **Casa Conectada**.
-- **Inteligência de Dispositivos**:
-  - Consulta online de especificações técnicas (MobileAPI.dev, Wikipedia e Google Play Certified Devices Registry).
-  - Classificação automática da categoria do aparelho: **Básico (Entrada)**, **Médio (Intermediário)** ou **Alto Desempenho (Topo de Linha)**.
-  - Estimativa determinística de **média real esperada em Mbps por banda**: Wi-Fi 2,4 GHz, Wi-Fi 5 GHz e Wi-Fi 6 GHz (indicando explicitamente incompatibilidade quando o aparelho não suporta a frequência).
-- **Modos de Visualização**:
-  - **Modo Simples**: Visão direta e amigável para usuário final e cliente.
-  - **Modo Avançado (NOC / Engenharia)**: Telemetria detalhada, distribuição de percentis (Mín / P50 / P90 / Máx), gráficos de vazão e laudo técnico para exportação.
-- **Histórico e Exportação**: Armazenamento local no navegador com exportação em `.json`, `.csv` e cópia de laudo técnico em `.txt`.
+### 1.1 Servidores Utilizados na Medição
+- **Infraestrutura de rede:** [Cloudflare Edge Anycast](https://speed.cloudflare.com) via HTTP/TLS (nó PoP mais próximo da conexão do usuário):
+  - **Ping e Download:** `GET https://speed.cloudflare.com/__down`
+  - **Upload:** `POST https://speed.cloudflare.com/__up`
+- **Telemetria de borda:** cada resposta expõe cabeçalhos `Server-Timing` (`cfSpeedEdge`, `cfSpeedWorker`, `cfReqDur` e métricas TCP `cfL4` com `rtt` em microssegundos) e tempos do navegador via `PerformanceResourceTiming` (`responseStart - requestStart`).
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
+### 1.2 Como Cada Métrica é Medida e Calculada
 
-- **Runtime & Build**: [Vite](https://vitejs.dev/) v7
-- **Linguagem**: JavaScript Vanilla (ES Modules), HTML5 semântico e CSS3 (Design System responsivo em dark mode técnico)
-- **Engine de Teste de Velocidade**: `@cloudflare/speedtest`
-- **Testes Unitários**: Node.js Native Test Runner (`node --test`)
-- **Backend Serverless**: Handler Node.js em `api/device-specs.js` (compatível com Vercel, Netlify e middleware Vite)
+#### Ping Ocioso (RTT Base)
+1. Antes das amostras oficiais, o motor envia **1 sonda de aquecimento** (`bytes=0&during=warmup`, descartada) para estabelecer TLS/conexão sem contaminar o resultado.
+2. Em seguida, executa de **8 a 16 sondagens sequenciais** (`bytes=0&during=idle`, conforme o perfil), com timeout individual de `1200 ms` e teto total de fase (`1600–2800 ms`).
+3. Cada RTT passa pelo filtro `resolveNetworkRttMs` (`src/services/speedtest.service.js`), que subtrai o tempo de processamento do servidor e, caso haja pico artificial do Worker Cloudflare (`serverMs > 100 ms`) ou atraso de handshake inicial, utiliza o RTT TCP real informado em `cfL4`.
+4. O valor consolidado exibido é a **mediana (`P50`)** das amostras válidas.
+
+#### Jitter (Ocioso e Sob Carga)
+- Calculado por `computeJitterMs` como a **média das diferenças absolutas entre amostras consecutivas de RTT** (em milissegundos), exigindo ao menos 2 amostras válidas:
+  $$\text{Jitter} = \frac{1}{N - 1} \sum_{i=1}^{N-1} |\text{RTT}_i - \text{RTT}_{i-1}|$$
+- Medido separadamente em repouso (**Jitter Ocioso**) e durante carga intensa de download/upload (**Jitter sob Carga**).
+
+#### Download Multi-Stream Contínuo
+- Abre **3 a 6 fluxos paralelos** lendo os blocos continuamente via `ReadableStream` (`getReader()`, com fallback para `arrayBuffer()`).
+- **Janela deslizante de 1 segundo (`250 ms` por tick):** evita depender apenas do fechamento de arquivos gigantes; assim, a primeira amostra surge em ~`250 ms`.
+- **Resiliência a *stalls* e limites HTTP:** se um fluxo individual ficar `2000 ms` sem receber bytes, apenas aquele fluxo é abortado e reiniciado em paralelo enquanto os demais mantêm o link saturado; respostas `HTTP 429` ou `403` reduzem automaticamente o tamanho do bloco (*downshift*) sem interromper o teste.
+- **Descarte de *ramp-up* (Slow Start):** descarta os primeiros `1000 ms` da fase quando existem ao menos `4` amostras em regime permanente (`selectSteadyStatePoints`).
+- **Apresentação:** a **Média sustentada** é a métrica principal (fonte única de verdade em cards, diagnóstico, comparativo de dispositivo, histórico e laudo `.TXT`), o **Pico observado** aparece como referência secundária e a tabela técnica mostra `Mín / P50 / Média`.
+
+#### Upload Multi-Stream Contínuo
+- Executa **3 a 4 fluxos paralelos** contra `/__up` com blocos adaptativos (`128 KB` a `5 MB`).
+- Para não congestionar conexões lentas (`< 5 Mbps`), os fluxos extras (`workerId >= 2`) aguardam a primeira confirmação HTTP ou até `450 ms` antes de entrar em paralelo.
+- No navegador, utiliza `XMLHttpRequest` monitorando `xhr.upload.onprogress` para detectar travamentos individuais (`2800 ms` sem progresso). Os Mbps reportados baseiam-se em **bytes confirmados com HTTP 200** (evitando picos ilusórios de buffer TCP do sistema operacional), recorrendo a bytes em voo apenas após `1200 ms` sem resposta caso o enlace seja muito lento (`< 3 Mbps`).
+
+#### Latência sob Carga & Bufferbloat (`ΔRTT`)
+- Durante as fases de download e upload, uma sonda paralela independente dispara requisições leves (`bytes=0&during=download` e `during=upload`, intervalo de `300–400 ms`) para medir quanto a fila do roteador/provedor retém pacotes interativos sob tráfego intenso.
+- O delta sob carga é `ΔRTT = max(0, Latência sob Carga P50 - Ping Ocioso P50)`:
+  - `<= 20 ms`: controlado / protegido.
+  - `21–59 ms`: elevação moderada / possível congestionamento.
+  - `>= 60 ms`: alerta de **possível bufferbloat** (retenção severa de fila).
+
+#### Detecção de Aba em Segundo Plano (`visibilitychange`)
+- Como navegadores reduzem a frequência de timers quando uma aba é minimizada ou trocada, o TestAi monitora `document.visibilityState` durante testes ativos e alerta no banner caso a aba tenha ficado em segundo plano.
 
 ---
 
-## 🚀 Como Executar o Projeto Localmente
+### 1.3 Perfis de Medição (`src/config/speedtest.config.js`)
 
-### 1. Clonar o repositório e instalar dependências
+| Perfil | Fluxos (↓ / ↑) | Duração por Fase | Pings Ociosos | Consumo Estimado | Indicação |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `light` (Econômico / Móvel) | `3 ↓ / 3 ↑` | `4,5 s` | `8` | `~35–140 MB` | Redes móveis 4G/5G ou triagem rápida |
+| `standard` (Padrão Adaptativo) | `4 ↓ / 4 ↑` | `6,5 s` | `10` | `~120–450 MB` | Links residenciais/corporativos de 100 Mbps a 1 Gbps |
+| `multigig` (Alta Capacidade) | `6 ↓ / 4 ↑` | `8,0 s` | `10` | `~350–950 MB` | Saturação de planos Gigabit e Multi-Gigabit |
+| `stability` (Bufferbloat) | `4 ↓ / 4 ↑` | `9,0 s` | `16` | `~220–620 MB` | Investigação prolongada de estabilidade e *bufferbloat* |
+
+---
+
+### 1.4 Diagnóstico Multidimensional, Gaming e Cards Práticos
+- **Diagnóstico Multidimensional (`src/diagnostics/connection-diagnostics.js`):** avalia conjuntamente Download, Upload, Ping, Jitter, `ΔRTT` sob download/upload, coeficiente de variação (`cv`) e plano contratado opcional. Em falhas ou quedas isoladas de upload, aponta primeiro possíveis gargalos no caminho do aparelho ou rede local para a internet (Wi-Fi fraco, VPN, extensão, firewall) sem culpar o provedor automaticamente.
+- **Avaliação Gaming (`src/diagnostics/gaming-analyzer.js`):** analisa 4 pilares (Resposta Base, Jitter, Resiliência sob Download e Resiliência sob Upload) e compatibilidade orientativa por gênero (`FPS / Battle Royale`, `MOBA / Esportes` e `MMORPG / Cooperativo`), deixando explícito que o RTT reflete o percurso até a borda Cloudflare, não servidores específicos de jogos.
+- **Cards Práticos ("O que posso fazer com minha internet?"):** exibe um esqueleto 2×2 antes/durante o teste (zero salto de layout) e, ao concluir, apresenta os 4 cenários: **Streaming & Vídeo**, **Downloads & Arquivos**, **Jogos & Chamadas** e **Casa Conectada**.
+
+---
+
+### 1.5 Onde Consultamos as Especificações dos Celulares
+O módulo de **Inteligência de Dispositivos** (`src/services/device-specs.service.js` + `api/device-specs.js`) consulta fontes online em **3 camadas com fallback automático**:
+
+1. **Camada 1 — Proxy Serverless `/api/device-specs` → [MobileAPI.dev](https://mobileapi.dev):**
+   - Executada estritamente no servidor Node (`api/device-specs.js`) quando `MOBILEAPI_KEY` está configurada (nunca exposta no cliente).
+   - Extrai SoC/chipset, RAM, geração e padrões Wi-Fi (`/6`, `/6e`, `/7`), redes 4G/5G e variante regional.
+   - Proteções: cache em memória com TTL de 12h (limite `500` entradas), *rate limit* de `20 req/min` por IP (`HTTP 429`), validação opcional de origem via `ALLOWED_ORIGIN` e cabeçalhos `X-Content-Type-Options: nosniff` e `Referrer-Policy: no-referrer`.
+2. **Camada 2 — Wikipedia Online (MediaWiki API EN e PT):**
+   - Consulta `https://en.wikipedia.org/w/api.php` e `https://pt.wikipedia.org/w/api.php`, realizando *parsing* e desembrulhamento recursivo de `Infobox` (`{{...}}`) e normalização de entidades HTML (`&nbsp;`, `&#160;`). Funciona integralmente mesmo sem `MOBILEAPI_KEY`.
+3. **Camada 3 — Google Play Certified Devices Registry (via jsDelivr CDN):**
+   - Consulta `https://cdn.jsdelivr.net/gh/bsthen/device-models/devices.json` para mapear modelos regionais, códigos de fabricante e aparelhos de entrada/legados.
+
+A partir dos dados obtidos, `src/diagnostics/capability-advisor.js` classifica determinísticamente o smartphone (**Básico**, **Médio** ou **Alto Desempenho**), estima a **média real em Mbps por banda Wi-Fi (`2,4 GHz`, `5 GHz` e `6 GHz`)** e separa explicitamente:
+1. Especificação Teórica Documentada
+2. Estimativa em Condições Favoráveis
+3. Velocidade Medida Neste Navegador
+
+---
+
+### 1.6 Privacidade, Armazenamento Local e Segurança
+- **Histórico 100% local:** as medições ficam salvas apenas no `localStorage` do navegador (`chave testai_history_v2`, máximo de `100` registros), com comparação lado a lado e exportação em `.json`, `.csv` e laudo técnico `.txt`. Nenhum banco externo armazena resultados do usuário.
+- **Segurança no cliente e no servidor:** toda inserção de texto no DOM usa `textContent` (prevenção contra XSS); variáveis sensíveis permanecem no `.env` (ignorado pelo Git) e lidas apenas pelo backend serverless.
+
+---
+
+## 2. Arquitetura Modular e Ferramentas
+
+Veja o mapa completo de diretórios, contratos DOM críticos e invariantes em [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md):
+
+- `src/config/`: perfis multi-stream (`TEST_PROFILES`) e limiares de diagnóstico/gaming.
+- `src/services/`: motor de velocidade (`speedtest.service.js`) e lookup em 3 camadas (`device-specs.service.js`).
+- `src/diagnostics/`: regras puras de diagnóstico de rede, gaming e capacidade de dispositivos.
+- `src/ui/` e `src/main.js`: camada de interface desacoplada coordenada por `initApp()`.
+- `src/styles/`: design system modular baseado em tokens CSS em `tokens.css` (dark mode técnico com contraste WCAG 2.2 AA).
+- `src/types.js` e `tsconfig.json`: contratos JSDoc validados via TypeScript (`checkJs: true`).
+- `api/device-specs.js`: handler serverless compatível com Vercel, Netlify e proxy local do Vite.
+- `lab.html`, `src/lab/` e `scripts/benchmark-profiles.mjs`: bancada isolada (*TestAi Lab*) para simular ou comparar perfis sequenciais com `@cloudflare/speedtest`.
+- `tests/`: suítes unitárias e de integridade modular (`node --test tests/*.test.js`).
+
+---
+
+## 3. Como Executar Localmente
+
+### Pré-requisitos
+- Node.js 18+ e npm.
+
+### 1. Instalar dependências
 ```bash
 npm install
 ```
 
 ### 2. Configurar variáveis de ambiente (opcional)
-Copie o arquivo de exemplo:
 ```bash
 cp .env.example .env
 ```
-> Caso não configure uma chave em `MOBILEAPI_KEY`, o TestAi utilizará automaticamente as camadas de consulta pública online (Wikipedia e Google Play Registry) com fallback inteligente.
+> Sem `MOBILEAPI_KEY`, o TestAi utiliza automaticamente as Camadas 2 e 3 (Wikipedia e Google Play Registry). Em produção com backend próprio, defina `ALLOWED_ORIGIN` com a URL oficial da aplicação para restringir CORS em `/api/device-specs`.
 
-### 3. Rodar em modo de desenvolvimento
+### 3. Iniciar servidor de desenvolvimento
 ```bash
 npm run dev
 ```
 
-### 4. Executar os testes unitários
+### 4. Executar checagem de tipos, testes e build
 ```bash
+npm run typecheck
 npm test
-```
-
-### 5. Gerar build de produção
-```bash
 npm run build
 npm run preview
 ```
 
+### 5. Simulador offline de perfis (TestAi Lab)
+```bash
+node scripts/benchmark-profiles.mjs
+```
+
 ---
 
-## 📄 Licença
+## Licença
 Distribuído sob a licença MIT.

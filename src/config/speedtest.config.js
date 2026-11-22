@@ -1,106 +1,113 @@
 /**
- * Configurações de medição e critérios técnicos de diagnóstico do TestAi.
- * Compatível com @cloudflare/speedtest ^1.13.1.
+ * Configurações de medição multi-stream resiliente e critérios técnicos de diagnóstico do TestAi.
  */
+
+const COMMON_ENGINE_OPTIONS = Object.freeze({
+  autoStart: false,
+  downloadApiUrl: 'https://speed.cloudflare.com/__down',
+  uploadApiUrl: 'https://speed.cloudflare.com/__up',
+  measureDownloadLoadedLatency: true,
+  measureUploadLoadedLatency: true,
+  latencyPercentile: 0.5,
+  bandwidthPercentile: 0.5,
+  sampleIntervalMs: 250,
+  rollingWindowMs: 1000,
+  rampDiscardMs: 1000,
+  downloadStallTimeoutMs: 2000,
+  uploadStallTimeoutMs: 2800,
+  pingTimeoutMs: 1200
+});
 
 export const TEST_PROFILES = {
   light: {
     id: 'light',
     label: 'Econômico / Móvel (4G/5G)',
-    description: 'Consumo reduzido (~35–85 MB). Ideal para redes móveis ou triagem rápida.',
-    estimatedDataLabel: '~35–85 MB',
-    timeoutMs: 60_000,
-    inactivityTimeoutMs: 18_000,
+    description: 'Ciclo rápido multi-fluxo (~4,5s por fase) ideal para redes móveis ou triagem rápida.',
+    estimatedDataLabel: '~35–140 MB',
+    timeoutMs: 45_000,
+    inactivityTimeoutMs: 15_000,
     options: {
-      autoStart: false,
-      measureDownloadLoadedLatency: true,
-      measureUploadLoadedLatency: true,
+      ...COMMON_ENGINE_OPTIONS,
       loadedLatencyThrottle: 400,
-      latencyPercentile: 0.5,
-      bandwidthPercentile: 0.9,
-      measurements: [
-        { type: 'latency', numPackets: 1 },
-        { type: 'download', bytes: 1e5, count: 1, bypassMinDuration: true },
-        { type: 'latency', numPackets: 15 },
-        { type: 'download', bytes: 1e5, count: 6 },
-        { type: 'download', bytes: 1e6, count: 6 },
-        { type: 'download', bytes: 1e7, count: 3 },
-        { type: 'upload', bytes: 1e5, count: 6 },
-        { type: 'upload', bytes: 1e6, count: 5 },
-        { type: 'upload', bytes: 1e7, count: 2 }
-      ]
+      idlePingCount: 8,
+      maxIdleLatencyMs: 1600,
+      downloadDurationMs: 4500,
+      uploadDurationMs: 4500,
+      downloadConcurrency: 3,
+      uploadConcurrency: 3,
+      initialDownloadBytes: 1_000_000,
+      maxDownloadBytes: 2_000_000,
+      initialUploadBytes: 131_072,
+      maxUploadBytes: 2_000_000
     }
   },
 
   standard: {
     id: 'standard',
     label: 'Padrão Adaptativo (100 Mbps – 1 Gbps)',
-    description: 'Fases contínuas de latência, download e upload equilibrando precisão e tempo (~180–360 MB).',
-    estimatedDataLabel: '~180–360 MB',
-    timeoutMs: 90_000,
-    inactivityTimeoutMs: 22_000,
+    description: 'Fluxos paralelos contínuos com adaptação de bloco e recuperação instantânea de stalls (~6,5s por fase).',
+    estimatedDataLabel: '~120–450 MB',
+    timeoutMs: 55_000,
+    inactivityTimeoutMs: 18_000,
     options: {
-      autoStart: false,
-      measureDownloadLoadedLatency: true,
-      measureUploadLoadedLatency: true,
+      ...COMMON_ENGINE_OPTIONS,
       loadedLatencyThrottle: 400,
-      latencyPercentile: 0.5,
-      bandwidthPercentile: 0.9,
-      measurements: [
-        // 1. Aquecimento de conexão (TLS/HTTP) + Latência ociosa isolada
-        { type: 'latency', numPackets: 1 },
-        { type: 'download', bytes: 1e5, count: 1, bypassMinDuration: true },
-        { type: 'latency', numPackets: 20 },
-
-        // 2. Fase contínua de Download + RTT sob Download
-        { type: 'download', bytes: 1e5, count: 6 },
-        { type: 'download', bytes: 1e6, count: 6 },
-        { type: 'download', bytes: 1e7, count: 5 },
-        { type: 'download', bytes: 2.5e7, count: 4 },
-        { type: 'download', bytes: 1e8, count: 2 },
-
-        // 3. Fase contínua de Upload + RTT sob Upload
-        { type: 'upload', bytes: 1e5, count: 6 },
-        { type: 'upload', bytes: 1e6, count: 5 },
-        { type: 'upload', bytes: 1e7, count: 4 },
-        { type: 'upload', bytes: 2.5e7, count: 3 }
-      ]
+      idlePingCount: 10,
+      maxIdleLatencyMs: 2000,
+      downloadDurationMs: 6500,
+      uploadDurationMs: 6500,
+      downloadConcurrency: 4,
+      uploadConcurrency: 4,
+      initialDownloadBytes: 2_000_000,
+      maxDownloadBytes: 5_000_000,
+      initialUploadBytes: 262_144,
+      maxUploadBytes: 4_000_000
     }
   },
 
   multigig: {
     id: 'multigig',
     label: 'Alta Capacidade (1 Gbps – 2,5 Gbps+)',
-    description: 'Rajadas de 100 MB e 250 MB para saturação completa de enlaces Gigabit e Multi-Gigabit.',
-    estimatedDataLabel: '~650–980 MB',
-    timeoutMs: 120_000,
-    inactivityTimeoutMs: 25_000,
+    description: 'Até 6 fluxos paralelos contínuos para saturação completa de links Gigabit e Multi-Gigabit.',
+    estimatedDataLabel: '~350–950 MB',
+    timeoutMs: 70_000,
+    inactivityTimeoutMs: 20_000,
     options: {
-      autoStart: false,
-      measureDownloadLoadedLatency: true,
-      measureUploadLoadedLatency: true,
+      ...COMMON_ENGINE_OPTIONS,
       loadedLatencyThrottle: 400,
-      latencyPercentile: 0.5,
-      bandwidthPercentile: 0.9,
-      measurements: [
-        // 1. Aquecimento + Latência ociosa isolada
-        { type: 'latency', numPackets: 1 },
-        { type: 'download', bytes: 1e5, count: 1, bypassMinDuration: true },
-        { type: 'latency', numPackets: 20 },
+      idlePingCount: 10,
+      maxIdleLatencyMs: 2000,
+      downloadDurationMs: 8000,
+      uploadDurationMs: 8000,
+      downloadConcurrency: 6,
+      uploadConcurrency: 4,
+      initialDownloadBytes: 2_000_000,
+      maxDownloadBytes: 10_000_000,
+      initialUploadBytes: 524_288,
+      maxUploadBytes: 5_000_000
+    }
+  },
 
-        // 2. Fase contínua de Download Multi-Gigabit
-        { type: 'download', bytes: 1e6, count: 6 },
-        { type: 'download', bytes: 1e7, count: 6 },
-        { type: 'download', bytes: 2.5e7, count: 4 },
-        { type: 'download', bytes: 1e8, count: 3 },
-        { type: 'download', bytes: 2.5e8, count: 2 },
-
-        // 3. Fase contínua de Upload Multi-Gigabit
-        { type: 'upload', bytes: 1e6, count: 6 },
-        { type: 'upload', bytes: 1e7, count: 4 },
-        { type: 'upload', bytes: 2.5e7, count: 4 },
-        { type: 'upload', bytes: 5e7, count: 3 }
-      ]
+  stability: {
+    id: 'stability',
+    label: 'Estabilidade Prolongada (Bufferbloat)',
+    description: 'Sondagens estendidas de latência ociosa e 9s contínuos sob carga para avaliar bufferbloat e variação temporal.',
+    estimatedDataLabel: '~220–620 MB',
+    timeoutMs: 75_000,
+    inactivityTimeoutMs: 20_000,
+    options: {
+      ...COMMON_ENGINE_OPTIONS,
+      loadedLatencyThrottle: 300,
+      idlePingCount: 16,
+      maxIdleLatencyMs: 2800,
+      downloadDurationMs: 9000,
+      uploadDurationMs: 9000,
+      downloadConcurrency: 4,
+      uploadConcurrency: 4,
+      initialDownloadBytes: 2_000_000,
+      maxDownloadBytes: 5_000_000,
+      initialUploadBytes: 262_144,
+      maxUploadBytes: 4_000_000
     }
   }
 };
