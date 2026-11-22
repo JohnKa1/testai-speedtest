@@ -170,9 +170,198 @@ export function renderDeviceComparisonPanel(device, lastResult = null) {
 }
 
 export function createDevicePanelController({ deviceService, state }) {
-  async function handleDeviceLookup(rawQuery) {
+  if (!state.selectedBrandId) {
+    state.selectedBrandId = null;
+  }
+
+  function getBrandsList() {
+    return typeof deviceService.getSupportedBrands === 'function'
+      ? deviceService.getSupportedBrands()
+      : [];
+  }
+
+  function inferBrandIdFromText(text) {
+    const lower = String(text || '').toLowerCase();
+    if (/\b(?:samsung|galaxy)\b/.test(lower)) return 'samsung';
+    if (/\b(?:apple|iphone|ipad)\b/.test(lower)) return 'apple';
+    if (/\b(?:motorola|moto|edge|razr)\b/.test(lower)) return 'motorola';
+    if (/\bpoco\b/.test(lower)) return 'poco';
+    if (/\b(?:xiaomi|redmi|mi)\b/.test(lower)) return 'xiaomi';
+    if (/\brealme\b/.test(lower)) return 'realme';
+    if (/\binfinix\b/.test(lower)) return 'infinix';
+    return null;
+  }
+
+  function renderLiveSuggestions(rawInput = '') {
+    const box = document.getElementById('deviceSuggestionsBox');
+    const container = document.getElementById('deviceLiveSuggestions');
+    const titleEl = document.getElementById('deviceSuggestionsTitle');
+    if (!box || !container || typeof deviceService.getBrandSuggestions !== 'function') return;
+
+    const brandId = state.selectedBrandId;
+    if (!brandId) {
+      box.classList.add('hidden');
+      clearElement(container);
+      return;
+    }
+
+    const trimmed = String(rawInput || '').trim();
+    const suggestions = deviceService.getBrandSuggestions(brandId, trimmed, 10);
+    clearElement(container);
+
+    if (!Array.isArray(suggestions) || suggestions.length === 0) {
+      box.classList.add('hidden');
+      return;
+    }
+
+    if (titleEl) {
+      titleEl.textContent = trimmed ? 'Modelos correspondentes:' : 'Modelos sugeridos:';
+    }
+
+    suggestions.forEach((item) => {
+      const btn = createEl('button', 'chip-btn suggestion-chip', item.model);
+      btn.type = 'button';
+      btn.setAttribute('role', 'option');
+
+      btn.addEventListener('click', () => {
+        container.querySelectorAll('.chip-btn.is-active').forEach((el) => {
+          el.classList.remove('is-active');
+        });
+        btn.classList.add('is-active');
+        const input = /** @type {HTMLInputElement | null} */ (
+          document.getElementById('deviceQueryInput')
+        );
+        if (input) {
+          input.value = item.model;
+        }
+        handleDeviceLookup(item.model, { brandId });
+      });
+
+      container.appendChild(btn);
+    });
+
+    box.classList.remove('hidden');
+  }
+
+  function selectBrand(brandId, { focusInput = true, preserveInput = false } = {}) {
+    const brands = getBrandsList();
+    const brand = brands.find((b) => b.id === brandId);
+    if (!brand) return;
+
+    state.selectedBrandId = brand.id;
+
+    // Atualiza cards da Etapa 1
+    const brandGrid = document.getElementById('deviceBrandGrid');
+    if (brandGrid) {
+      brandGrid.querySelectorAll('.brand-card-btn').forEach((cardEl) => {
+        const isCurrent = cardEl.getAttribute('data-brand-id') === brand.id;
+        cardEl.classList.toggle('is-active', isCurrent);
+        cardEl.setAttribute('aria-pressed', String(isCurrent));
+      });
+    }
+
+    const brandStatus = document.getElementById('deviceBrandStatus');
+    if (brandStatus) {
+      brandStatus.textContent = '';
+    }
+
+    // Desbloqueia Etapa 2
+    const step2 = document.getElementById('deviceModelStep');
+    if (step2) {
+      step2.classList.remove('is-locked');
+    }
+
+    const activeBadge = document.getElementById('deviceActiveBrandBadge');
+    if (activeBadge) {
+      activeBadge.textContent = brand.label;
+      activeBadge.classList.remove('hidden');
+    }
+
+    const step2Title = document.getElementById('deviceStep2Title');
+    if (step2Title) {
+      step2Title.textContent = `Digite o modelo ${brand.label}`;
+    }
+
+    const labelEl = document.getElementById('deviceQueryLabel');
+    if (labelEl) {
+      labelEl.textContent = `Modelo ${brand.label}`;
+    }
+
+    const inputEl = /** @type {HTMLInputElement | null} */ (
+      document.getElementById('deviceQueryInput')
+    );
+    const searchBtn = /** @type {HTMLButtonElement | null} */ (
+      document.getElementById('deviceSearchBtn')
+    );
+
+    if (inputEl) {
+      inputEl.disabled = false;
+      inputEl.placeholder = `Digite o modelo ${brand.label}...`;
+      if (!preserveInput) {
+        inputEl.value = '';
+      }
+      if (focusInput && typeof inputEl.focus === 'function') {
+        inputEl.focus();
+      }
+    }
+
+    if (searchBtn) {
+      searchBtn.disabled = false;
+    }
+
+    hideDeviceFeedback();
+    renderLiveSuggestions(inputEl ? inputEl.value : '');
+  }
+
+  function renderBrandCards() {
+    const brandGrid = document.getElementById('deviceBrandGrid');
+    if (!brandGrid) return;
+
+    clearElement(brandGrid);
+    const brands = getBrandsList();
+
+    brands.forEach((brand) => {
+      const btn = createEl('button', 'brand-card-btn', brand.label);
+      btn.type = 'button';
+      btn.setAttribute('data-brand-id', brand.id);
+      btn.setAttribute('aria-pressed', String(state.selectedBrandId === brand.id));
+      if (state.selectedBrandId === brand.id) {
+        btn.classList.add('is-active');
+      }
+
+      btn.addEventListener('click', () => {
+        selectBrand(brand.id, { focusInput: true, preserveInput: false });
+      });
+
+      brandGrid.appendChild(btn);
+    });
+
+    // Vincula listener de digitação em tempo real na Etapa 2
+    const inputEl = /** @type {HTMLInputElement | null} */ (
+      document.getElementById('deviceQueryInput')
+    );
+    if (inputEl && !inputEl.dataset.liveBound) {
+      inputEl.dataset.liveBound = 'true';
+      inputEl.addEventListener('input', () => {
+        if (!state.selectedBrandId) {
+          const inferred = inferBrandIdFromText(inputEl.value) || 'samsung';
+          selectBrand(inferred, { focusInput: false, preserveInput: true });
+        }
+        renderLiveSuggestions(inputEl.value);
+      });
+    }
+  }
+
+  async function handleDeviceLookup(rawQuery, options = {}) {
     const seq = ++state.deviceLookupSeq;
     const trimmed = String(rawQuery || '').trim();
+    const effectiveBrandId =
+      options.brandId || state.selectedBrandId || inferBrandIdFromText(trimmed);
+
+    if (effectiveBrandId && effectiveBrandId !== state.selectedBrandId) {
+      selectBrand(effectiveBrandId, { focusInput: false, preserveInput: true });
+    }
+
     const btn = /** @type {HTMLButtonElement | null} */ (
       document.getElementById('deviceSearchBtn')
     );
@@ -185,7 +374,9 @@ export function createDevicePanelController({ deviceService, state }) {
       showDeviceFeedback('info', `Consultando especificações de "${trimmed}"...`);
     }
 
-    const lookup = await deviceService.lookupDevice(rawQuery);
+    const lookup = await deviceService.lookupDevice(rawQuery, {
+      brandId: effectiveBrandId
+    });
     if (seq !== state.deviceLookupSeq) return;
 
     if (btn) {
@@ -208,6 +399,8 @@ export function createDevicePanelController({ deviceService, state }) {
   }
 
   function renderPopularDeviceChips() {
+    renderBrandCards();
+
     const container = document.getElementById('deviceQuickChips');
     if (!container) return;
 
@@ -222,11 +415,18 @@ export function createDevicePanelController({ deviceService, state }) {
           el.classList.remove('is-active');
         });
         btn.classList.add('is-active');
+
+        const inferredBrand = inferBrandIdFromText(label);
+        if (inferredBrand) {
+          selectBrand(inferredBrand, { focusInput: false, preserveInput: true });
+        }
+
         const input = /** @type {HTMLInputElement | null} */ (
           document.getElementById('deviceQueryInput')
         );
-        if (input) input.value = label;
-        handleDeviceLookup(label);
+        if (input) input.value = dev.model;
+        renderLiveSuggestions(dev.model);
+        handleDeviceLookup(dev.model, { brandId: inferredBrand });
       });
       container.appendChild(btn);
     });
@@ -234,6 +434,8 @@ export function createDevicePanelController({ deviceService, state }) {
 
   return {
     handleDeviceLookup,
-    renderPopularDeviceChips
+    renderPopularDeviceChips,
+    renderBrandCards,
+    selectBrand
   };
 }

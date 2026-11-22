@@ -234,4 +234,209 @@ describe('TestAi — Inteligência de Dispositivos (Wikipedia + Google Play)', (
     assert.equal(wikiFound.device.hardware.chipset, 'Apple A18 Pro');
     assert.equal(wikiFound.device.hardware.ram, '8 GB LPDDR5X');
   });
+
+  it('bloqueia falsos positivos de modelos similares/antigos na Wikipedia e resolve o modelo exato', async () => {
+    // Simula a Wikipedia retornando modelos parecidos/antigos quando o modelo exato não tem artigo próprio
+    const noisyWikiFetch = async (url) => {
+      const parsed = new URL(url, 'http://localhost');
+      if (parsed.hostname.includes('jsdelivr.net')) {
+        return {
+          ok: true,
+          json: async () => ({
+            'XT2239-10': { brand: 'Motorola', name: 'moto e22' },
+            'SM-A105M': { brand: 'Samsung', name: 'Galaxy A10' },
+            'SM-A107M': { brand: 'Samsung', name: 'Galaxy A10s' }
+          })
+        };
+      }
+
+      const action = parsed.searchParams.get('action');
+      const list = parsed.searchParams.get('list');
+      if (action === 'query' && list === 'search') {
+        // Wikipedia devolve artigos parecidos da mesma marca, mas NÃO o modelo pesquisado
+        return {
+          ok: true,
+          json: async () => ({
+            query: {
+              search: [
+                { title: 'Samsung Galaxy A10' },
+                { title: 'Samsung Galaxy A series' },
+                { title: 'Samsung Galaxy S25 FE' },
+                { title: 'Moto E (1st generation)' },
+                { title: 'Moto G5' },
+                { title: 'Redmi Note 13' }
+              ]
+            }
+          })
+        };
+      }
+
+      if (action === 'query' && parsed.searchParams.get('prop') === 'revisions') {
+        const titles = parsed.searchParams.get('titles') || '';
+        const firstTitle = titles.split('|')[0];
+        return {
+          ok: true,
+          json: async () => ({
+            query: {
+              pages: {
+                999: {
+                  pageid: 999,
+                  title: firstTitle,
+                  revisions: [
+                    {
+                      slots: {
+                        main: {
+                          '*': `{{Infobox mobile phone
+| name = ${firstTitle}
+| manufacturer = Generic
+| connectivity = Wi-Fi 802.11 b/g/n/ac
+| networks = 4G LTE
+}}`
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          })
+        };
+      }
+
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+
+    const service = new DeviceSpecsService({ fetchImpl: noisyWikiFetch });
+
+    // 1. "Moto E22" NÃO deve aceitar "Moto E (1st generation)" nem "Moto G5" da Wikipedia; deve cair no Google Play Registry
+    const e22 = await service.lookupDevice('Moto E22');
+    assert.equal(e22.status, 'found');
+    assert.equal(e22.origin, 'google-play-registry');
+    assert.match(e22.device.model, /e22/i);
+    assert.equal(e22.device.wifi.generation, 'Wi-Fi 5');
+
+    // 2. "Galaxy A15 5G" NÃO deve aceitar "Galaxy A10" nem "Galaxy A55" da Wikipedia; deve resolver exatamente Galaxy A15 5G
+    const a15 = await service.lookupDevice('Galaxy A15 5G');
+    assert.equal(a15.status, 'found');
+    assert.equal(a15.device.manufacturer, 'Samsung');
+    assert.equal(a15.device.model, 'Galaxy A15 5G');
+    assert.equal(a15.device.wifi.generation, 'Wi-Fi 5');
+    assert.equal(a15.device.cellular.has5G, true);
+
+    // 3. "Galaxy S25" (base) NÃO deve aceitar "Samsung Galaxy S25 FE" da Wikipedia
+    const s25Base = await service.lookupDevice('Galaxy S25');
+    assert.equal(s25Base.status, 'found');
+    assert.equal(s25Base.device.model, 'Galaxy S25');
+    assert.equal(s25Base.device.wifi.generation, 'Wi-Fi 7');
+
+    // 4. "Redmi 13" NÃO deve aceitar "Redmi Note 13" da Wikipedia
+    const redmi13 = await service.lookupDevice('Redmi 13');
+    assert.equal(redmi13.status, 'found');
+    assert.equal(redmi13.device.model, 'Redmi 13');
+
+    // 5. Modelos inexistentes ("Galaxy A999", "iPhone 99") devem retornar not-found em vez de puxar modelo similar
+    const fakeGalaxy = await service.lookupDevice('Galaxy A999');
+    assert.equal(fakeGalaxy.status, 'not-found');
+    assert.equal(fakeGalaxy.device, null);
+
+    const fakeIphone = await service.lookupDevice('iPhone 99');
+    assert.equal(fakeIphone.status, 'not-found');
+    assert.equal(fakeIphone.device, null);
+
+    // 6. Encontra modelos atuais e passados digitados de formas variadas (sem "Galaxy", sem "Redmi", com GB, colados, etc.)
+    const currentAndPastQueries = [
+      ['Samsung A54', 'Samsung', 'Galaxy A54', 'Wi-Fi 6'],
+      ['Galaxy A55', 'Samsung', 'Galaxy A55', 'Wi-Fi 6'],
+      ['Galaxy A56', 'Samsung', 'Galaxy A56', 'Wi-Fi 6'],
+      ['Galaxy A35', 'Samsung', 'Galaxy A35', 'Wi-Fi 6'],
+      ['Galaxy A16 5G', 'Samsung', 'Galaxy A16 5G', 'Wi-Fi 5'],
+      ['Galaxy M55', 'Samsung', 'Galaxy M55', 'Wi-Fi 6'],
+      ['Z Flip6', 'Samsung', 'Galaxy Z Flip 6', 'Wi-Fi 7'],
+      ['Z Fold 6', 'Samsung', 'Galaxy Z Fold 6', 'Wi-Fi 7'],
+      ['Motorola G84', 'Motorola', 'Moto G84', 'Wi-Fi 5'],
+      ['Moto G85', 'Motorola', 'Moto G85', 'Wi-Fi 5'],
+      ['Moto G75', 'Motorola', 'Moto G75', 'Wi-Fi 6'],
+      ['Moto G54 256GB', 'Motorola', 'Moto G54', 'Wi-Fi 5'],
+      ['Moto G35', 'Motorola', 'Moto G35', 'Wi-Fi 5'],
+      ['Moto G04s', 'Motorola', 'Moto G04s', 'Wi-Fi 5'],
+      ['Edge 50 Pro', 'Motorola', 'Edge 50 Pro', 'Wi-Fi 7'],
+      ['Edge 40 Neo', 'Motorola', 'Edge 40 Neo', 'Wi-Fi 6E'],
+      ['Razr 50 Ultra', 'Motorola', 'Razr 50 Ultra', 'Wi-Fi 7'],
+      ['Xiaomi 14', 'Xiaomi', 'Xiaomi 14', 'Wi-Fi 7'],
+      ['Xiaomi Note 13 Pro+', 'Xiaomi', 'Redmi Note 13 Pro Plus', 'Wi-Fi 6'],
+      ['Note 13 Pro 5G', 'Xiaomi', 'Redmi Note 13 Pro 5G', 'Wi-Fi 6'],
+      ['Xiaomi 13C', 'Xiaomi', 'Redmi 13C', 'Wi-Fi 5'],
+      ['Redmi 14C', 'Xiaomi', 'Redmi 14C', 'Wi-Fi 5'],
+      ['Poco X6 Pro', 'POCO', 'Poco X6 Pro', 'Wi-Fi 6E'],
+      ['X6 Pro 5G', 'POCO', 'Poco X6 Pro 5G', 'Wi-Fi 6E'],
+      ['Poco F6', 'POCO', 'Poco F6', 'Wi-Fi 6E'],
+      ['Realme C67', 'Realme', 'Realme C67', 'Wi-Fi 5'],
+      ['Realme 12 Pro+', 'Realme', 'Realme 12 Pro Plus', 'Wi-Fi 6'],
+      ['Infinix Hot 40 Pro', 'Infinix', 'Infinix Hot 40 Pro', 'Wi-Fi 5'],
+      ['Pixel 9 Pro', 'Google', 'Pixel 9 Pro', 'Wi-Fi 7'],
+      ['Zenfone 10', 'Asus', 'Zenfone 10', 'Wi-Fi 7'],
+      ['iPhone 15 128GB', 'Apple', 'iPhone 15', 'Wi-Fi 6'],
+      ['iPhone 13 Mini', 'Apple', 'iPhone 13 Mini', 'Wi-Fi 6']
+    ];
+
+    for (const [q, expectedBrand, expectedModel, expectedWifi] of currentAndPastQueries) {
+      const res = await service.lookupDevice(q);
+      assert.equal(res.status, 'found', `Deveria encontrar "${q}"`);
+      assert.equal(res.device.manufacturer, expectedBrand, `Marca incorreta para "${q}"`);
+      assert.equal(res.device.model, expectedModel, `Modelo incorreto para "${q}"`);
+      assert.equal(res.device.wifi.generation, expectedWifi, `Wi-Fi incorreto para "${q}"`);
+    }
+  });
+
+  it('filtra aparelhos exclusivamente na janela 2015–2026 e opera em 2 etapas (Marca -> Sugestões instantâneas por tecla)', async () => {
+    const service = new DeviceSpecsService({
+      fetchImpl: createMockOnlineSources()
+    });
+
+    // Etapa 0: Bloqueio estrito de aparelhos anteriores a 2015
+    for (const oldModel of ['iPhone 4s', 'iPhone 5s', 'iPhone 6', 'Galaxy S4', 'Galaxy S5', 'Galaxy Note 3', 'Moto G1', 'Moto G2']) {
+      const resOld = await service.lookupDevice(oldModel);
+      assert.equal(resOld.status, 'not-found', `Modelo pré-2015 "${oldModel}" não deve ser consultado`);
+      assert.equal(resOld.origin, 'temporal-filter-2015-2026');
+    }
+
+    // Modelos de 2015 em diante continuam válidos
+    const iphone6s = await service.lookupDevice('iPhone 6s', { brandId: 'apple' });
+    assert.equal(iphone6s.status, 'found');
+    assert.equal(iphone6s.device.model, 'iPhone 6s');
+
+    // Etapa 1: Marcas clicáveis disponíveis
+    const brands = service.getSupportedBrands();
+    assert.ok(brands.length >= 7);
+    assert.ok(brands.some((b) => b.id === 'samsung'));
+    assert.ok(brands.some((b) => b.id === 'apple'));
+    assert.ok(brands.some((b) => b.id === 'motorola'));
+    assert.ok(brands.some((b) => b.id === 'xiaomi'));
+    assert.ok(brands.some((b) => b.id === 'poco'));
+
+    // Etapa 2: Ao escolher Apple e digitar "iPhone 15" (ou "15"), retorna as variantes clicáveis (iPhone 15, Plus, Pro, Pro Max)
+    const apple15Suggestions = service.getBrandSuggestions('apple', 'iPhone 15');
+    const apple15Models = apple15Suggestions.map((s) => s.model);
+    assert.ok(apple15Models.includes('iPhone 15'));
+    assert.ok(apple15Models.includes('iPhone 15 Plus'));
+    assert.ok(apple15Models.includes('iPhone 15 Pro'));
+    assert.ok(apple15Models.includes('iPhone 15 Pro Max'));
+
+    // Ao escolher Samsung e digitar "A06", fica restrito apenas à Samsung e sugere Galaxy A06 / A06 5G
+    const samsungA06Suggestions = service.getBrandSuggestions('samsung', 'A06');
+    assert.ok(samsungA06Suggestions.length >= 1);
+    assert.ok(samsungA06Suggestions.every((s) => s.manufacturer === 'Samsung'));
+    assert.ok(samsungA06Suggestions.some((s) => s.model === 'Galaxy A06'));
+
+    const scopedA06 = await service.lookupDevice('A06', { brandId: 'samsung' });
+    assert.equal(scopedA06.status, 'found');
+    assert.equal(scopedA06.device.manufacturer, 'Samsung');
+    assert.equal(scopedA06.device.model, 'Galaxy A06');
+
+    // Ao escolher Motorola e digitar apenas "84", resolve dentro da Motorola
+    const scopedG84 = await service.lookupDevice('G84', { brandId: 'motorola' });
+    assert.equal(scopedG84.status, 'found');
+    assert.equal(scopedG84.device.manufacturer, 'Motorola');
+    assert.equal(scopedG84.device.model, 'Moto G84');
+  });
 });

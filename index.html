@@ -680,30 +680,75 @@
               <span class="diag-badge">INTELIGÊNCIA DE DISPOSITIVO</span>
               <h2>Capacidade do Celular ou Aparelho Testado</h2>
               <p class="card-hint">
-                Identifique a categoria do aparelho (Básico / Médio / Alto Desempenho) e a média real esperada nas bandas Wi-Fi 2,4 GHz, 5 GHz e 6 GHz
+                Escolha a marca e digite o modelo para consultar a capacidade real nas bandas Wi-Fi 2,4 GHz, 5 GHz e 6 GHz
               </p>
             </div>
           </div>
 
-          <form class="device-search-form" id="deviceSearchForm" autocomplete="off">
-            <div class="control-group device-input-wrap">
-              <label class="control-label" for="deviceQueryInput">
-                Fabricante e modelo (ex.: Galaxy A10, Galaxy A06, Moto E22, Galaxy A71, Galaxy S25 FE)
-              </label>
-              <input
-                type="text"
-                id="deviceQueryInput"
-                class="control-input"
-                maxlength="80"
-                placeholder="Digite o modelo do aparelho..."
-              />
+          <!-- ETAPA 1: SELEÇÃO DE MARCA (CARDS CLICÁVEIS LIMPOS) -->
+          <div class="device-step-block" id="deviceBrandStep">
+            <div class="device-step-header">
+              <span class="device-step-pill">ETAPA 1</span>
+              <h3 class="device-step-title">Escolha a marca</h3>
+              <span class="device-step-sub" id="deviceBrandStatus"></span>
             </div>
-            <button type="submit" class="btn-secondary" id="deviceSearchBtn">
-              Consultar Aparelho
-            </button>
-          </form>
+            <div
+              class="device-brand-grid"
+              id="deviceBrandGrid"
+              role="group"
+              aria-label="Fabricantes de smartphones"
+            ></div>
+          </div>
 
-          <div class="device-chips" id="deviceQuickChips" aria-label="Modelos populares"></div>
+          <!-- ETAPA 2: BUSCA DO MODELO + AUTOCOMPLETE INSTANTÂNEO -->
+          <div class="device-step-block is-locked" id="deviceModelStep">
+            <div class="device-step-header">
+              <span class="device-step-pill" id="deviceStep2Pill">ETAPA 2</span>
+              <h3 class="device-step-title" id="deviceStep2Title">
+                Digite o modelo
+              </h3>
+              <span class="device-active-brand-badge hidden" id="deviceActiveBrandBadge"></span>
+            </div>
+
+            <form class="device-search-form" id="deviceSearchForm" autocomplete="off">
+              <div class="control-group device-input-wrap">
+                <label class="control-label" for="deviceQueryInput" id="deviceQueryLabel">
+                  Modelo do aparelho
+                </label>
+                <input
+                  type="text"
+                  id="deviceQueryInput"
+                  class="control-input"
+                  maxlength="80"
+                  disabled
+                  placeholder="Selecione uma marca acima..."
+                />
+              </div>
+              <button type="submit" class="btn-secondary" id="deviceSearchBtn" disabled>
+                Consultar Aparelho
+              </button>
+            </form>
+
+            <!-- SUGESTÕES COERENTES EM TEMPO REAL A CADA TECLA -->
+            <div class="device-suggestions-box hidden" id="deviceSuggestionsBox">
+              <div class="device-suggestions-header">
+                <span class="device-suggestions-title" id="deviceSuggestionsTitle">
+                  Modelos sugeridos:
+                </span>
+              </div>
+              <div
+                class="device-chips"
+                id="deviceLiveSuggestions"
+                role="listbox"
+                aria-label="Sugestões de modelos compatíveis com a escrita"
+              ></div>
+            </div>
+          </div>
+
+          <div class="device-quick-block">
+            <span class="device-quick-label">Atalhos rápidos:</span>
+            <div class="device-chips" id="deviceQuickChips" aria-label="Modelos populares"></div>
+          </div>
           <div id="deviceFeedback" class="device-feedback hidden" role="status"></div>
           <div id="deviceResultPanel" class="device-result-panel hidden"></div>
         </section>
