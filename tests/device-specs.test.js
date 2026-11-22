@@ -10,7 +10,11 @@ import {
 } from '../src/diagnostics/capability-advisor.js';
 import { DeviceSpecsService } from '../src/services/device-specs.service.js';
 import { METRIC_STATUS } from '../src/utils/validators.js';
-import { getBrandDisplayLabel } from '../src/ui/device-panel.js';
+import {
+  createDevicePanelController,
+  getBrandDisplayLabel,
+  getBrandPlaceholderExample
+} from '../src/ui/device-panel.js';
 
 describe('TestAi — Inteligência de Dispositivos (Wikipedia + Google Play)', () => {
   it('encontra tanto flagships por palavras-chave invertidas (S25 galaxy) quanto aparelhos regionais/antigos (Moto E22, Positivo Twist)', async () => {
@@ -439,11 +443,217 @@ describe('TestAi — Inteligência de Dispositivos (Wikipedia + Google Play)', (
     assert.equal(scopedG84.status, 'found');
     assert.equal(scopedG84.device.manufacturer, 'Motorola');
     assert.equal(scopedG84.device.model, 'Moto G84');
+  });
 
-    // E2: getBrandDisplayLabel traduz 'outras' em um único ponto da UI sem alterar o serviço
+  it('traduz "outras" para "Outras marcas" em getBrandDisplayLabel sem alterar o serviço (E2)', () => {
+    const service = new DeviceSpecsService({ fetchImpl: createMockOnlineSources() });
+    const brands = service.getSupportedBrands();
     const outrasBrand = brands.find((b) => b.id === 'outras');
     assert.equal(outrasBrand.label, 'Asus / Google / Outras');
     assert.equal(getBrandDisplayLabel(outrasBrand), 'Outras marcas');
     assert.equal(getBrandDisplayLabel(brands.find((b) => b.id === 'samsung')), 'Samsung');
+  });
+
+  it('contrato E10: cada exemplo de placeholder por marca resolve OFFLINE com status "found"', async () => {
+    const offlineService = new DeviceSpecsService({
+      fetchImpl: async () => {
+        throw new Error('Rede indisponível (teste offline E10)');
+      }
+    });
+
+    const brands = offlineService.getSupportedBrands();
+    assert.ok(brands.length >= 8);
+
+    for (const brand of brands) {
+      const { exampleModel, placeholderText } = getBrandPlaceholderExample(brand);
+      assert.ok(exampleModel.length > 0, `Marca "${brand.id}" deve possuir um exemplo de placeholder`);
+      assert.equal(placeholderText, `Ex.: ${exampleModel}`);
+
+      const res = await offlineService.lookupDevice(exampleModel, { brandId: brand.id });
+      assert.equal(
+        res.status,
+        'found',
+        `Exemplo "${exampleModel}" da marca "${brand.id}" deve resolver offline com status 'found'`
+      );
+      assert.ok(res.device, `Dispositivo resolvido para "${exampleModel}" não pode ser nulo`);
+    }
+  });
+
+  it('Etapa 3 (E3, E11, E13, E15): revela #deviceModelStep, foca input apenas em clique/toque (não em seta de teclado) e limpa estado ao trocar de marca', () => {
+    const prevDocument = globalThis.document;
+
+    const makeNode = (tag, id = '', initialClasses = []) => {
+      const classes = new Set(initialClasses);
+      const attrs = new Map();
+      const listeners = new Map();
+      let focusCount = 0;
+
+      let _className = initialClasses.join(' ');
+      const node = {
+        tagName: tag.toUpperCase(),
+        id,
+        type: '',
+        name: '',
+        value: '',
+        checked: false,
+        disabled: false,
+        placeholder: '',
+        textContent: '',
+        dataset: {},
+        children: [],
+        get className() {
+          return _className;
+        },
+        set className(val) {
+          _className = String(val || '');
+          classes.clear();
+          _className
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((c) => classes.add(c));
+        },
+        get firstChild() {
+          return this.children[0] || null;
+        },
+        get focusCount() {
+          return focusCount;
+        },
+        focus() {
+          focusCount += 1;
+        },
+        classList: {
+          add(...items) {
+            items.forEach((c) => classes.add(c));
+          },
+          remove(...items) {
+            items.forEach((c) => classes.delete(c));
+          },
+          toggle(c, force) {
+            if (force === undefined) {
+              if (classes.has(c)) classes.delete(c);
+              else classes.add(c);
+            } else if (force) classes.add(c);
+            else classes.delete(c);
+          },
+          contains(c) {
+            return classes.has(c);
+          }
+        },
+        setAttribute(k, v) {
+          attrs.set(k, String(v));
+        },
+        getAttribute(k) {
+          return attrs.has(k) ? attrs.get(k) : null;
+        },
+        addEventListener(ev, fn) {
+          if (!listeners.has(ev)) listeners.set(ev, []);
+          listeners.get(ev).push(fn);
+        },
+        dispatch(ev, payload = {}) {
+          const fns = listeners.get(ev) || [];
+          fns.forEach((fn) => fn(payload));
+        },
+        appendChild(child) {
+          this.children.push(child);
+          return child;
+        },
+        removeChild(child) {
+          const idx = this.children.indexOf(child);
+          if (idx >= 0) this.children.splice(idx, 1);
+          return child;
+        },
+        querySelectorAll(selector) {
+          const results = [];
+          const visit = (n) => {
+            for (const ch of n.children || []) {
+              if (
+                (selector.includes('.brand-option') && ch.classList.contains('brand-option')) ||
+                (selector.includes('.brand-radio') && ch.classList.contains('brand-radio')) ||
+                (selector.includes('.chip-btn.is-active') &&
+                  ch.classList.contains('chip-btn') &&
+                  ch.classList.contains('is-active'))
+              ) {
+                results.push(ch);
+              }
+              visit(ch);
+            }
+          };
+          visit(this);
+          return results;
+        }
+      };
+      return node;
+    };
+
+    try {
+      const byId = {
+        deviceBrandGrid: makeNode('div', 'deviceBrandGrid'),
+        deviceBrandStatus: makeNode('span', 'deviceBrandStatus', ['sr-only']),
+        deviceModelStep: makeNode('div', 'deviceModelStep', ['device-step-block', 'hidden']),
+        deviceQueryLabel: makeNode('label', 'deviceQueryLabel'),
+        deviceQueryInput: makeNode('input', 'deviceQueryInput'),
+        deviceSearchBtn: makeNode('button', 'deviceSearchBtn'),
+        deviceSuggestionsBox: makeNode('div', 'deviceSuggestionsBox', ['hidden']),
+        deviceSuggestionsTitle: makeNode('span', 'deviceSuggestionsTitle'),
+        deviceLiveSuggestions: makeNode('div', 'deviceLiveSuggestions'),
+        deviceFeedback: makeNode('div', 'deviceFeedback', ['hidden']),
+        deviceResultPanel: makeNode('div', 'deviceResultPanel', ['hidden'])
+      };
+
+      globalThis.document = {
+        getElementById: (id) => byId[id] || null,
+        createElement: (tag) => makeNode(tag),
+        createTextNode: (t) => ({ textContent: t })
+      };
+
+      const service = new DeviceSpecsService({ fetchImpl: createMockOnlineSources() });
+      const state = { selectedBrandId: null, selectedDevice: { model: 'Old' }, deviceLookupSeq: 0 };
+      const controller = createDevicePanelController({ deviceService: service, state });
+      controller.renderBrandCards();
+
+      assert.equal(byId.deviceModelStep.classList.contains('hidden'), true);
+
+      const radios = byId.deviceBrandGrid.querySelectorAll('.brand-radio');
+      const labels = byId.deviceBrandGrid.querySelectorAll('.brand-option');
+      assert.equal(radios.length, 8);
+      assert.equal(labels.length, 8);
+
+      // 1. Navegação por seta no teclado: revela #deviceModelStep e anuncia em #deviceBrandStatus, MAS NÃO foca o input
+      const samsungRadio = radios[0];
+      samsungRadio.dispatch('keydown', { key: 'ArrowRight' });
+      samsungRadio.checked = true;
+      samsungRadio.dispatch('change');
+
+      assert.equal(state.selectedBrandId, 'samsung');
+      assert.equal(byId.deviceModelStep.classList.contains('hidden'), false);
+      assert.equal(byId.deviceQueryInput.focusCount, 0, 'Seta de teclado NÃO pode mover foco para o input');
+      assert.match(byId.deviceBrandStatus.textContent, /Samsung/);
+      assert.equal(byId.deviceQueryInput.placeholder, 'Ex.: A06');
+
+      // Simula preenchimento de busca, sugestões e resultado na marca Samsung
+      byId.deviceQueryInput.value = 'A54';
+      byId.deviceQueryInput.dispatch('input');
+      assert.equal(byId.deviceSuggestionsBox.classList.contains('hidden'), false);
+      byId.deviceResultPanel.classList.remove('hidden');
+      byId.deviceResultPanel.appendChild(makeNode('div'));
+
+      // 2. Clique/toque em outra marca (Apple): limpa caixa, sugestões e resultado, e MOVE o foco para o input
+      const appleRadio = radios[1];
+      const appleLabel = labels[1];
+      appleLabel.dispatch('pointerdown');
+      appleRadio.checked = true;
+      appleRadio.dispatch('change');
+
+      assert.equal(state.selectedBrandId, 'apple');
+      assert.equal(byId.deviceQueryInput.focusCount, 1, 'Clique/toque DEVE mover o foco para o input');
+      assert.equal(byId.deviceQueryInput.value, '', 'Troca de marca deve limpar o input');
+      assert.equal(byId.deviceQueryInput.placeholder, 'Ex.: iPhone 15');
+      assert.equal(byId.deviceSuggestionsBox.classList.contains('hidden'), true, 'Troca de marca deve ocultar sugestões');
+      assert.equal(byId.deviceLiveSuggestions.children.length, 0, 'Troca de marca deve limpar sugestões');
+      assert.equal(byId.deviceResultPanel.classList.contains('hidden'), true, 'Troca de marca deve ocultar resultado anterior');
+      assert.equal(byId.deviceResultPanel.children.length, 0, 'Troca de marca deve limpar resultado anterior');
+    } finally {
+      globalThis.document = prevDocument;
+    }
   });
 });

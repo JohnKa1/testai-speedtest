@@ -181,10 +181,29 @@ export function getBrandDisplayLabel(brand) {
   return brand.id === 'outras' ? 'Outras marcas' : String(brand.label || '');
 }
 
+/**
+ * Extrai UM exemplo de modelo de brand.placeholder do serviço que resolva offline (E5, E10).
+ *
+ * @param {{ id?: string, placeholder?: string } | null | undefined} brand
+ * @returns {{ exampleModel: string, placeholderText: string }}
+ */
+export function getBrandPlaceholderExample(brand) {
+  const raw = String(brand?.placeholder || '')
+    .replace(/^ex\.?:\s*/i, '')
+    .replace(/\.{2,}$/, '');
+  const firstExample = raw.split(',')[0]?.trim() || '';
+  return {
+    exampleModel: firstExample,
+    placeholderText: firstExample ? `Ex.: ${firstExample}` : 'Digite o modelo...'
+  };
+}
+
 export function createDevicePanelController({ deviceService, state }) {
   if (!state.selectedBrandId) {
     state.selectedBrandId = null;
   }
+
+  let lastInteractionWasPointer = false;
 
   function getBrandsList() {
     return typeof deviceService.getSupportedBrands === 'function'
@@ -204,6 +223,22 @@ export function createDevicePanelController({ deviceService, state }) {
     return null;
   }
 
+  function clearSuggestions() {
+    const box = document.getElementById('deviceSuggestionsBox');
+    const container = document.getElementById('deviceLiveSuggestions');
+    if (box) box.classList.add('hidden');
+    if (container) clearElement(container);
+  }
+
+  function clearResultPanel() {
+    state.selectedDevice = null;
+    const panel = document.getElementById('deviceResultPanel');
+    if (panel) {
+      panel.classList.add('hidden');
+      clearElement(panel);
+    }
+  }
+
   function renderLiveSuggestions(rawInput = '') {
     const box = document.getElementById('deviceSuggestionsBox');
     const container = document.getElementById('deviceLiveSuggestions');
@@ -211,13 +246,13 @@ export function createDevicePanelController({ deviceService, state }) {
     if (!box || !container || typeof deviceService.getBrandSuggestions !== 'function') return;
 
     const brandId = state.selectedBrandId;
-    if (!brandId) {
+    const trimmed = String(rawInput || '').trim();
+    if (!brandId || !trimmed) {
       box.classList.add('hidden');
       clearElement(container);
       return;
     }
 
-    const trimmed = String(rawInput || '').trim();
     const suggestions = deviceService.getBrandSuggestions(brandId, trimmed, 10);
     clearElement(container);
 
@@ -227,7 +262,7 @@ export function createDevicePanelController({ deviceService, state }) {
     }
 
     if (titleEl) {
-      titleEl.textContent = trimmed ? 'Modelos correspondentes:' : 'Modelos sugeridos:';
+      titleEl.textContent = 'Modelos correspondentes:';
     }
 
     suggestions.forEach((item) => {
@@ -255,18 +290,19 @@ export function createDevicePanelController({ deviceService, state }) {
     box.classList.remove('hidden');
   }
 
-  function selectBrand(brandId, { focusInput = true, preserveInput = false } = {}) {
+  function selectBrand(brandId, { focusInput = false, preserveInput = false } = {}) {
     const brands = getBrandsList();
     const brand = brands.find((b) => b.id === brandId);
     if (!brand) return;
 
     const displayLabel = getBrandDisplayLabel(brand);
+    const { placeholderText } = getBrandPlaceholderExample(brand);
     state.selectedBrandId = brand.id;
 
     // Atualiza opções da Etapa 1 (rádios nativos + labels estilizados)
     const brandGrid = document.getElementById('deviceBrandGrid');
     if (brandGrid) {
-      brandGrid.querySelectorAll('.brand-option, .brand-card-btn').forEach((cardEl) => {
+      brandGrid.querySelectorAll('.brand-option').forEach((cardEl) => {
         const isCurrent = cardEl.getAttribute('data-brand-id') === brand.id;
         cardEl.classList.toggle('is-active', isCurrent);
       });
@@ -278,13 +314,13 @@ export function createDevicePanelController({ deviceService, state }) {
 
     const brandStatus = document.getElementById('deviceBrandStatus');
     if (brandStatus) {
-      brandStatus.textContent = `Marca selecionada: ${displayLabel}`;
+      brandStatus.textContent = `Marca selecionada: ${displayLabel}. Campo Modelo da ${displayLabel} disponível.`;
     }
 
-    // Desbloqueia Etapa 2
+    // Revela Passo 2 removendo .hidden (E4, E11)
     const step2 = document.getElementById('deviceModelStep');
     if (step2) {
-      step2.classList.remove('is-locked');
+      step2.classList.remove('hidden', 'is-locked');
     }
 
     const activeBadge = document.getElementById('deviceActiveBrandBadge');
@@ -312,7 +348,7 @@ export function createDevicePanelController({ deviceService, state }) {
 
     if (inputEl) {
       inputEl.disabled = false;
-      inputEl.placeholder = `Digite o modelo ${displayLabel}...`;
+      inputEl.placeholder = placeholderText;
       if (!preserveInput) {
         inputEl.value = '';
       }
@@ -325,8 +361,14 @@ export function createDevicePanelController({ deviceService, state }) {
       searchBtn.disabled = false;
     }
 
+    // Estado 5 (4.1): Troca de marca limpa a caixa, as opções coerentes e o resultado
     hideDeviceFeedback();
-    renderLiveSuggestions(inputEl ? inputEl.value : '');
+    if (!preserveInput) {
+      clearSuggestions();
+      clearResultPanel();
+    } else {
+      renderLiveSuggestions(inputEl ? inputEl.value : '');
+    }
   }
 
   function renderBrandCards() {
@@ -349,7 +391,7 @@ export function createDevicePanelController({ deviceService, state }) {
       radio.value = brand.id;
       radio.checked = isSelected;
 
-      const label = createEl('label', 'brand-option brand-card-btn');
+      const label = createEl('label', 'brand-option');
       label.setAttribute('for', radioId);
       label.setAttribute('data-brand-id', brand.id);
       if (isSelected) {
@@ -363,9 +405,50 @@ export function createDevicePanelController({ deviceService, state }) {
       label.appendChild(checkIcon);
       label.appendChild(textSpan);
 
+      // E3, E13, E15: distingue interação por ponteiro (clique/toque) de navegação por setas no teclado
+      const markPointerInteraction = () => {
+        lastInteractionWasPointer = true;
+      };
+      label.addEventListener('pointerdown', markPointerInteraction);
+      label.addEventListener('mousedown', markPointerInteraction);
+      label.addEventListener('touchstart', markPointerInteraction, { passive: true });
+
+      radio.addEventListener('keydown', (ev) => {
+        if (
+          ev.key === 'ArrowLeft' ||
+          ev.key === 'ArrowRight' ||
+          ev.key === 'ArrowUp' ||
+          ev.key === 'ArrowDown' ||
+          ev.key === ' ' ||
+          ev.key === 'Spacebar'
+        ) {
+          lastInteractionWasPointer = false;
+        }
+      });
+
+      radio.addEventListener('click', (ev) => {
+        if (typeof ev.detail === 'number' && ev.detail > 0) {
+          lastInteractionWasPointer = true;
+        }
+      });
+
+      label.addEventListener('click', () => {
+        // Caso o usuário clique novamente na marca que já estava selecionada, move o foco para a caixa
+        if (state.selectedBrandId === brand.id) {
+          const inputEl = /** @type {HTMLInputElement | null} */ (
+            document.getElementById('deviceQueryInput')
+          );
+          if (inputEl && typeof inputEl.focus === 'function') {
+            inputEl.focus();
+          }
+        }
+      });
+
       radio.addEventListener('change', () => {
         if (radio.checked) {
-          selectBrand(brand.id, { focusInput: true, preserveInput: false });
+          const shouldFocus = lastInteractionWasPointer;
+          lastInteractionWasPointer = false;
+          selectBrand(brand.id, { focusInput: shouldFocus, preserveInput: false });
         }
       });
 
