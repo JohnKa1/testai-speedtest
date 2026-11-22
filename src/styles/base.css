@@ -39,6 +39,22 @@ body {
     radial-gradient(45% 40% at 60% 85%, var(--bg-glow-3), transparent 70%);
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .bg-layer {
+    will-change: transform;
+    animation: bg-drift 90s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes bg-drift {
+  from {
+    transform: translate3d(-2%, -1%, 0) rotate(0deg);
+  }
+  to {
+    transform: translate3d(2%, 1%, 0) rotate(3deg);
+  }
+}
+
 .mono {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
