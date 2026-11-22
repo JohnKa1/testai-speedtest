@@ -10,6 +10,7 @@ import {
 } from '../src/diagnostics/capability-advisor.js';
 import { DeviceSpecsService } from '../src/services/device-specs.service.js';
 import { METRIC_STATUS } from '../src/utils/validators.js';
+import { getBrandDisplayLabel } from '../src/ui/device-panel.js';
 
 describe('TestAi — Inteligência de Dispositivos (Wikipedia + Google Play)', () => {
   it('encontra tanto flagships por palavras-chave invertidas (S25 galaxy) quanto aparelhos regionais/antigos (Moto E22, Positivo Twist)', async () => {
@@ -438,5 +439,11 @@ describe('TestAi — Inteligência de Dispositivos (Wikipedia + Google Play)', (
     assert.equal(scopedG84.status, 'found');
     assert.equal(scopedG84.device.manufacturer, 'Motorola');
     assert.equal(scopedG84.device.model, 'Moto G84');
+
+    // E2: getBrandDisplayLabel traduz 'outras' em um único ponto da UI sem alterar o serviço
+    const outrasBrand = brands.find((b) => b.id === 'outras');
+    assert.equal(outrasBrand.label, 'Asus / Google / Outras');
+    assert.equal(getBrandDisplayLabel(outrasBrand), 'Outras marcas');
+    assert.equal(getBrandDisplayLabel(brands.find((b) => b.id === 'samsung')), 'Samsung');
   });
 });

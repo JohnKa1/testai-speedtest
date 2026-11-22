@@ -672,44 +672,26 @@
         </section>
 
         <!-- ================================================================
-             MÓDULO COMPARTILHADO: CAPACIDADE DO DISPOSITIVO TESTADO
+             MÓDULO COMPARTILHADO: CONSULTE SEU DISPOSITIVO
         ================================================================ -->
-        <section class="card device-card" aria-label="Capacidade de conectividade do aparelho">
+        <section class="card device-card" aria-label="Consulte seu dispositivo">
           <div class="diag-top-row">
-            <div>
-              <span class="diag-badge">INTELIGÊNCIA DE DISPOSITIVO</span>
-              <h2>Capacidade do Celular ou Aparelho Testado</h2>
-              <p class="card-hint">
-                Escolha a marca e digite o modelo para consultar a capacidade real nas bandas Wi-Fi 2,4 GHz, 5 GHz e 6 GHz
-              </p>
-            </div>
+            <h2>Consulte seu dispositivo</h2>
           </div>
 
-          <!-- ETAPA 1: SELEÇÃO DE MARCA (CARDS CLICÁVEIS LIMPOS) -->
+          <!-- SELEÇÃO DE MARCA (GRADE 2x4 / 4x2 COM RÁDIOS NATIVOS) -->
           <div class="device-step-block" id="deviceBrandStep">
-            <div class="device-step-header">
-              <span class="device-step-pill">ETAPA 1</span>
-              <h3 class="device-step-title">Escolha a marca</h3>
-              <span class="device-step-sub" id="deviceBrandStatus"></span>
-            </div>
+            <span class="sr-only" id="deviceBrandStatus" aria-live="polite"></span>
             <div
-              class="device-brand-grid"
+              class="device-brand-grid brand-grid"
               id="deviceBrandGrid"
-              role="group"
-              aria-label="Fabricantes de smartphones"
+              role="radiogroup"
+              aria-label="Marca do dispositivo"
             ></div>
           </div>
 
-          <!-- ETAPA 2: BUSCA DO MODELO + AUTOCOMPLETE INSTANTÂNEO -->
+          <!-- PASSO 2: BUSCA DO MODELO + AUTOCOMPLETE INSTANTÂNEO -->
           <div class="device-step-block is-locked" id="deviceModelStep">
-            <div class="device-step-header">
-              <span class="device-step-pill" id="deviceStep2Pill">ETAPA 2</span>
-              <h3 class="device-step-title" id="deviceStep2Title">
-                Digite o modelo
-              </h3>
-              <span class="device-active-brand-badge hidden" id="deviceActiveBrandBadge"></span>
-            </div>
-
             <form class="device-search-form" id="deviceSearchForm" autocomplete="off">
               <div class="control-group device-input-wrap">
                 <label class="control-label" for="deviceQueryInput" id="deviceQueryLabel">
@@ -725,7 +707,7 @@
                 />
               </div>
               <button type="submit" class="btn-secondary" id="deviceSearchBtn" disabled>
-                Consultar Aparelho
+                Consultar
               </button>
             </form>
 
@@ -745,10 +727,6 @@
             </div>
           </div>
 
-          <div class="device-quick-block">
-            <span class="device-quick-label">Atalhos rápidos:</span>
-            <div class="device-chips" id="deviceQuickChips" aria-label="Modelos populares"></div>
-          </div>
           <div id="deviceFeedback" class="device-feedback hidden" role="status"></div>
           <div id="deviceResultPanel" class="device-result-panel hidden"></div>
         </section>

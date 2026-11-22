@@ -169,6 +169,18 @@ export function renderDeviceComparisonPanel(device, lastResult = null) {
   );
 }
 
+/**
+ * Ponto único de tradução do rótulo de exibição da marca na UI (E2).
+ * Mantém o serviço inalterado e converte 'outras' em 'Outras marcas'.
+ *
+ * @param {{ id?: string, label?: string } | null | undefined} brand
+ * @returns {string}
+ */
+export function getBrandDisplayLabel(brand) {
+  if (!brand) return '';
+  return brand.id === 'outras' ? 'Outras marcas' : String(brand.label || '');
+}
+
 export function createDevicePanelController({ deviceService, state }) {
   if (!state.selectedBrandId) {
     state.selectedBrandId = null;
@@ -248,21 +260,25 @@ export function createDevicePanelController({ deviceService, state }) {
     const brand = brands.find((b) => b.id === brandId);
     if (!brand) return;
 
+    const displayLabel = getBrandDisplayLabel(brand);
     state.selectedBrandId = brand.id;
 
-    // Atualiza cards da Etapa 1
+    // Atualiza opções da Etapa 1 (rádios nativos + labels estilizados)
     const brandGrid = document.getElementById('deviceBrandGrid');
     if (brandGrid) {
-      brandGrid.querySelectorAll('.brand-card-btn').forEach((cardEl) => {
+      brandGrid.querySelectorAll('.brand-option, .brand-card-btn').forEach((cardEl) => {
         const isCurrent = cardEl.getAttribute('data-brand-id') === brand.id;
         cardEl.classList.toggle('is-active', isCurrent);
-        cardEl.setAttribute('aria-pressed', String(isCurrent));
+      });
+      brandGrid.querySelectorAll('.brand-radio').forEach((radioEl) => {
+        const input = /** @type {HTMLInputElement} */ (radioEl);
+        input.checked = input.value === brand.id;
       });
     }
 
     const brandStatus = document.getElementById('deviceBrandStatus');
     if (brandStatus) {
-      brandStatus.textContent = '';
+      brandStatus.textContent = `Marca selecionada: ${displayLabel}`;
     }
 
     // Desbloqueia Etapa 2
@@ -273,18 +289,18 @@ export function createDevicePanelController({ deviceService, state }) {
 
     const activeBadge = document.getElementById('deviceActiveBrandBadge');
     if (activeBadge) {
-      activeBadge.textContent = brand.label;
+      activeBadge.textContent = displayLabel;
       activeBadge.classList.remove('hidden');
     }
 
     const step2Title = document.getElementById('deviceStep2Title');
     if (step2Title) {
-      step2Title.textContent = `Digite o modelo ${brand.label}`;
+      step2Title.textContent = `Digite o modelo ${displayLabel}`;
     }
 
     const labelEl = document.getElementById('deviceQueryLabel');
     if (labelEl) {
-      labelEl.textContent = `Modelo ${brand.label}`;
+      labelEl.textContent = `Modelo da ${displayLabel}`;
     }
 
     const inputEl = /** @type {HTMLInputElement | null} */ (
@@ -296,7 +312,7 @@ export function createDevicePanelController({ deviceService, state }) {
 
     if (inputEl) {
       inputEl.disabled = false;
-      inputEl.placeholder = `Digite o modelo ${brand.label}...`;
+      inputEl.placeholder = `Digite o modelo ${displayLabel}...`;
       if (!preserveInput) {
         inputEl.value = '';
       }
@@ -321,19 +337,41 @@ export function createDevicePanelController({ deviceService, state }) {
     const brands = getBrandsList();
 
     brands.forEach((brand) => {
-      const btn = createEl('button', 'brand-card-btn', brand.label);
-      btn.type = 'button';
-      btn.setAttribute('data-brand-id', brand.id);
-      btn.setAttribute('aria-pressed', String(state.selectedBrandId === brand.id));
-      if (state.selectedBrandId === brand.id) {
-        btn.classList.add('is-active');
+      const displayLabel = getBrandDisplayLabel(brand);
+      const isSelected = state.selectedBrandId === brand.id;
+      const radioId = `device-brand-radio-${brand.id}`;
+
+      const cell = createEl('div', 'brand-cell');
+      const radio = /** @type {HTMLInputElement} */ (createEl('input', 'brand-radio sr-only'));
+      radio.type = 'radio';
+      radio.name = 'deviceBrand';
+      radio.id = radioId;
+      radio.value = brand.id;
+      radio.checked = isSelected;
+
+      const label = createEl('label', 'brand-option brand-card-btn');
+      label.setAttribute('for', radioId);
+      label.setAttribute('data-brand-id', brand.id);
+      if (isSelected) {
+        label.classList.add('is-active');
       }
 
-      btn.addEventListener('click', () => {
-        selectBrand(brand.id, { focusInput: true, preserveInput: false });
+      const checkIcon = createEl('span', 'brand-option-check', '✓');
+      checkIcon.setAttribute('aria-hidden', 'true');
+      const textSpan = createEl('span', 'brand-option-label', displayLabel);
+
+      label.appendChild(checkIcon);
+      label.appendChild(textSpan);
+
+      radio.addEventListener('change', () => {
+        if (radio.checked) {
+          selectBrand(brand.id, { focusInput: true, preserveInput: false });
+        }
       });
 
-      brandGrid.appendChild(btn);
+      cell.appendChild(radio);
+      cell.appendChild(label);
+      brandGrid.appendChild(cell);
     });
 
     // Vincula listener de digitação em tempo real na Etapa 2
@@ -381,7 +419,7 @@ export function createDevicePanelController({ deviceService, state }) {
 
     if (btn) {
       btn.disabled = false;
-      btn.textContent = 'Consultar Aparelho';
+      btn.textContent = 'Consultar';
     }
 
     if (lookup.status === 'found' && lookup.device) {
