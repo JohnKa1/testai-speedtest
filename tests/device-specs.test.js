@@ -13,7 +13,8 @@ import { METRIC_STATUS } from '../src/utils/validators.js';
 import {
   createDevicePanelController,
   getBrandDisplayLabel,
-  getBrandPlaceholderExample
+  getBrandPlaceholderExample,
+  getBrandSearchName
 } from '../src/ui/device-panel.js';
 
 describe('TestAi — Inteligência de Dispositivos (Wikipedia + Google Play)', () => {
@@ -652,6 +653,211 @@ describe('TestAi — Inteligência de Dispositivos (Wikipedia + Google Play)', (
       assert.equal(byId.deviceLiveSuggestions.children.length, 0, 'Troca de marca deve limpar sugestões');
       assert.equal(byId.deviceResultPanel.classList.contains('hidden'), true, 'Troca de marca deve ocultar resultado anterior');
       assert.equal(byId.deviceResultPanel.children.length, 0, 'Troca de marca deve limpar resultado anterior');
+    } finally {
+      globalThis.document = prevDocument;
+    }
+  });
+
+  it('Etapa 4 (E9, E21, E22, E25): atualiza link do Google por brand.id (xiaomi e outras), limpa ao esvaziar/trocar marca e diferencia not-found, error e empty', async () => {
+    const prevDocument = globalThis.document;
+
+    const makeNode = (tag, id = '', initialClasses = []) => {
+      const classes = new Set(initialClasses);
+      const attrs = new Map();
+      const listeners = new Map();
+      let _className = initialClasses.join(' ');
+
+      const node = {
+        tagName: tag.toUpperCase(),
+        id,
+        type: '',
+        name: '',
+        value: '',
+        checked: false,
+        disabled: false,
+        placeholder: '',
+        textContent: '',
+        dataset: {},
+        children: [],
+        get className() {
+          return _className;
+        },
+        set className(val) {
+          _className = String(val || '');
+          classes.clear();
+          _className
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((c) => classes.add(c));
+        },
+        get firstChild() {
+          return this.children[0] || null;
+        },
+        focus() {},
+        classList: {
+          add(...items) {
+            items.forEach((c) => classes.add(c));
+          },
+          remove(...items) {
+            items.forEach((c) => classes.delete(c));
+          },
+          toggle(c, force) {
+            if (force === undefined) {
+              if (classes.has(c)) classes.delete(c);
+              else classes.add(c);
+            } else if (force) classes.add(c);
+            else classes.delete(c);
+          },
+          contains(c) {
+            return classes.has(c);
+          }
+        },
+        setAttribute(k, v) {
+          attrs.set(k, String(v));
+        },
+        getAttribute(k) {
+          return attrs.has(k) ? attrs.get(k) : null;
+        },
+        removeAttribute(k) {
+          attrs.delete(k);
+        },
+        addEventListener(ev, fn) {
+          if (!listeners.has(ev)) listeners.set(ev, []);
+          listeners.get(ev).push(fn);
+        },
+        dispatch(ev, payload = {}) {
+          const fns = listeners.get(ev) || [];
+          fns.forEach((fn) => fn(payload));
+        },
+        appendChild(child) {
+          this.children.push(child);
+          return child;
+        },
+        removeChild(child) {
+          const idx = this.children.indexOf(child);
+          if (idx >= 0) this.children.splice(idx, 1);
+          return child;
+        },
+        querySelectorAll(selector) {
+          const results = [];
+          const visit = (n) => {
+            for (const ch of n.children || []) {
+              if (
+                (selector.includes('.brand-option') && ch.classList.contains('brand-option')) ||
+                (selector.includes('.brand-radio') && ch.classList.contains('brand-radio'))
+              ) {
+                results.push(ch);
+              }
+              visit(ch);
+            }
+          };
+          visit(this);
+          return results;
+        }
+      };
+      return node;
+    };
+
+    try {
+      // E9: getBrandSearchName usa brand.id ('xiaomi' -> 'Xiaomi', 'outras' -> ''), nunca brand.label
+      assert.equal(getBrandSearchName('xiaomi'), 'Xiaomi');
+      assert.equal(getBrandSearchName('outras'), '');
+      assert.equal(getBrandSearchName('samsung'), 'Samsung');
+
+      const byId = {
+        deviceBrandGrid: makeNode('div', 'deviceBrandGrid'),
+        deviceBrandStatus: makeNode('span', 'deviceBrandStatus', ['sr-only']),
+        deviceModelStep: makeNode('div', 'deviceModelStep', ['device-step-block', 'hidden']),
+        deviceQueryLabel: makeNode('label', 'deviceQueryLabel'),
+        deviceQueryInput: makeNode('input', 'deviceQueryInput'),
+        deviceSearchBtn: makeNode('button', 'deviceSearchBtn'),
+        deviceGoogleLink: makeNode('a', 'deviceGoogleLink', ['device-fallback-link']),
+        deviceSuggestionsBox: makeNode('div', 'deviceSuggestionsBox', ['hidden']),
+        deviceSuggestionsTitle: makeNode('span', 'deviceSuggestionsTitle'),
+        deviceLiveSuggestions: makeNode('div', 'deviceLiveSuggestions'),
+        deviceFeedback: makeNode('div', 'deviceFeedback', ['hidden']),
+        deviceResultPanel: makeNode('div', 'deviceResultPanel', ['hidden'])
+      };
+
+      globalThis.document = {
+        getElementById: (id) => byId[id] || null,
+        createElement: (tag) => makeNode(tag),
+        createTextNode: (t) => ({ textContent: t })
+      };
+
+      let shouldFailNetwork = false;
+      const service = new DeviceSpecsService({
+        fetchImpl: async (url) => {
+          if (shouldFailNetwork) {
+            throw new Error('Falha simulada de rede');
+          }
+          return createMockOnlineSources()(url);
+        }
+      });
+
+      const state = { selectedBrandId: null, selectedDevice: null, deviceLookupSeq: 0 };
+      const controller = createDevicePanelController({ deviceService: service, state });
+      controller.renderBrandCards();
+
+      // Estado inicial: caixa vazia => link sem href e aria-disabled="true"
+      assert.equal(byId.deviceGoogleLink.getAttribute('href'), null);
+      assert.equal(byId.deviceGoogleLink.getAttribute('aria-disabled'), 'true');
+
+      // 1. Seleciona marca 'xiaomi' e digita "Mi 999": link usa "Xiaomi" (e não "Xiaomi / Redmi")
+      controller.selectBrand('xiaomi');
+      byId.deviceQueryInput.value = 'Mi 999';
+      byId.deviceQueryInput.dispatch('input');
+      const xiaomiHref = byId.deviceGoogleLink.getAttribute('href');
+      assert.ok(xiaomiHref);
+      assert.equal(byId.deviceGoogleLink.getAttribute('aria-disabled'), 'false');
+      assert.equal(new URL(xiaomiHref).searchParams.get('q'), 'Xiaomi Mi 999 especificações Wi-Fi');
+
+      // 2. Troca para marca 'outras': limpa caixa e remove href + aria-disabled="true"
+      controller.selectBrand('outras');
+      assert.equal(byId.deviceQueryInput.value, '');
+      assert.equal(byId.deviceGoogleLink.getAttribute('href'), null);
+      assert.equal(byId.deviceGoogleLink.getAttribute('aria-disabled'), 'true');
+
+      // Digita na marca 'outras': link NÃO inclui "Outras marcas" nem "Asus / Google / Outras"
+      byId.deviceQueryInput.value = 'Aparelho Raro X1';
+      byId.deviceQueryInput.dispatch('input');
+      const outrasHref = byId.deviceGoogleLink.getAttribute('href');
+      assert.ok(outrasHref);
+      assert.equal(new URL(outrasHref).searchParams.get('q'), 'Aparelho Raro X1 especificações Wi-Fi');
+
+      // 3. Estado not-found (E21): exibe "Não encontramos “{texto}” nas fontes consultadas." + link em destaque
+      await controller.handleDeviceLookup('Aparelho Raro X1', { brandId: 'outras' });
+      assert.equal(byId.deviceFeedback.classList.contains('hidden'), false);
+      assert.equal(byId.deviceFeedback.children.length, 2);
+      assert.equal(
+        byId.deviceFeedback.children[0].textContent,
+        'Não encontramos “Aparelho Raro X1” nas fontes consultadas.'
+      );
+      assert.equal(byId.deviceFeedback.children[1].tagName, 'A');
+      assert.equal(byId.deviceFeedback.children[1].getAttribute('href'), outrasHref);
+      assert.equal(byId.deviceGoogleLink.classList.contains('is-secondary-action'), true);
+
+      // 4. Estado error de rede (E21): exibe "Não foi possível consultar agora." + link (nunca texto de not-found)
+      const prevFetchImpl = service.fetchImpl;
+      service.fetchImpl = null;
+      await controller.handleDeviceLookup('Modelo Sob Falha Rede', { brandId: 'xiaomi' });
+      service.fetchImpl = prevFetchImpl;
+      assert.equal(byId.deviceFeedback.children.length, 2);
+      assert.equal(
+        byId.deviceFeedback.children[0].textContent,
+        'Não foi possível consultar agora.'
+      );
+      assert.equal(
+        new URL(byId.deviceFeedback.children[1].getAttribute('href')).searchParams.get('q'),
+        'Xiaomi Modelo Sob Falha Rede especificações Wi-Fi'
+      );
+
+      // 5. Estado empty (E21): sem link no feedback e #deviceGoogleLink desabilitado sem href
+      await controller.handleDeviceLookup('   ', { brandId: 'xiaomi' });
+      assert.equal(byId.deviceFeedback.children.length, 0);
+      assert.ok(byId.deviceFeedback.textContent.length > 0);
+      assert.equal(byId.deviceGoogleLink.getAttribute('href'), null);
+      assert.equal(byId.deviceGoogleLink.getAttribute('aria-disabled'), 'true');
     } finally {
       globalThis.document = prevDocument;
     }

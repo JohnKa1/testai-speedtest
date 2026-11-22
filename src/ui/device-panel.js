@@ -4,16 +4,73 @@
 
 import { evaluateDeviceComparison } from '../diagnostics/capability-advisor.js';
 import { clearElement, createEl } from '../utils/formatters.js';
+import { buildGoogleSearchUrl } from '../utils/google-search.js';
+
+/** @type {Record<string, string>} */
+const BRAND_SEARCH_NAME_BY_ID = Object.freeze({
+  samsung: 'Samsung',
+  apple: 'Apple',
+  motorola: 'Motorola',
+  xiaomi: 'Xiaomi',
+  poco: 'POCO',
+  realme: 'Realme',
+  infinix: 'Infinix',
+  outras: ''
+});
+
+/**
+ * Retorna o nome de busca por brand.id para compor a consulta do Google (E9, E25).
+ * Definido em um único ponto da UI; nunca passa brand.label ('xiaomi' -> 'Xiaomi', 'outras' -> '').
+ *
+ * @param {string | null | undefined} brandId
+ * @returns {string}
+ */
+export function getBrandSearchName(brandId) {
+  const key = String(brandId ?? '').toLowerCase();
+  return Object.prototype.hasOwnProperty.call(BRAND_SEARCH_NAME_BY_ID, key)
+    ? BRAND_SEARCH_NAME_BY_ID[key]
+    : '';
+}
+
+function buildGoogleFallbackLinkNode(url) {
+  const link = /** @type {HTMLAnchorElement} */ (
+    createEl('a', 'device-fallback-link is-secondary-action')
+  );
+  link.setAttribute('target', '_blank');
+  link.setAttribute('rel', 'noopener noreferrer');
+  link.setAttribute('href', url);
+  link.setAttribute('aria-disabled', 'false');
+  link.appendChild(
+    document.createTextNode('Seu dispositivo não aparece? Pesquisar no Google ')
+  );
+  const arrow = createEl('span', '', '↗');
+  arrow.setAttribute('aria-hidden', 'true');
+  const sr = createEl('span', 'sr-only', '(abre em nova aba)');
+  link.appendChild(arrow);
+  link.appendChild(sr);
+  return link;
+}
 
 /**
  * @param {import('../types.js').SemanticTone | string} tone
  * @param {string} text
+ * @param {{ googleUrl?: string | null }} [options]
  */
-export function showDeviceFeedback(tone, text) {
+export function showDeviceFeedback(tone, text, options = {}) {
   const el = document.getElementById('deviceFeedback');
   if (!el) return;
   el.className = `device-feedback tone-${tone}`;
-  el.textContent = text;
+  clearElement(el);
+
+  if (options?.googleUrl) {
+    const msgP = createEl('p', 'device-feedback-text');
+    msgP.textContent = text;
+    el.appendChild(msgP);
+    el.appendChild(buildGoogleFallbackLinkNode(options.googleUrl));
+  } else {
+    el.textContent = text;
+  }
+
   el.classList.remove('hidden');
 }
 
@@ -239,6 +296,39 @@ export function createDevicePanelController({ deviceService, state }) {
     }
   }
 
+  function syncGoogleFallbackLink(rawModel = '', { highlightAsAction = false } = {}) {
+    const linkEl = /** @type {HTMLAnchorElement | null} */ (
+      document.getElementById('deviceGoogleLink')
+    );
+    const searchBrand = getBrandSearchName(state.selectedBrandId);
+    const url = buildGoogleSearchUrl(searchBrand, rawModel);
+
+    if (!linkEl) return url;
+
+    if (!linkEl.dataset?.guardBound) {
+      if (linkEl.dataset) linkEl.dataset.guardBound = 'true';
+      linkEl.addEventListener('click', (ev) => {
+        if (linkEl.getAttribute('aria-disabled') === 'true' || !linkEl.getAttribute('href')) {
+          if (typeof ev?.preventDefault === 'function') ev.preventDefault();
+        }
+      });
+    }
+
+    if (!url) {
+      if (typeof linkEl.removeAttribute === 'function') {
+        linkEl.removeAttribute('href');
+      }
+      linkEl.setAttribute('aria-disabled', 'true');
+      linkEl.classList.remove('is-secondary-action');
+      return null;
+    }
+
+    linkEl.setAttribute('href', url);
+    linkEl.setAttribute('aria-disabled', 'false');
+    linkEl.classList.toggle('is-secondary-action', Boolean(highlightAsAction));
+    return url;
+  }
+
   function renderLiveSuggestions(rawInput = '') {
     const box = document.getElementById('deviceSuggestionsBox');
     const container = document.getElementById('deviceLiveSuggestions');
@@ -361,13 +451,16 @@ export function createDevicePanelController({ deviceService, state }) {
       searchBtn.disabled = false;
     }
 
-    // Estado 5 (4.1): Troca de marca limpa a caixa, as opções coerentes e o resultado
+    // Estado 5 (4.1): Troca de marca limpa a caixa, as opções coerentes, o resultado e o link do Google
     hideDeviceFeedback();
     if (!preserveInput) {
       clearSuggestions();
       clearResultPanel();
+      syncGoogleFallbackLink('', { highlightAsAction: false });
     } else {
-      renderLiveSuggestions(inputEl ? inputEl.value : '');
+      const currentVal = inputEl ? inputEl.value : '';
+      renderLiveSuggestions(currentVal);
+      syncGoogleFallbackLink(currentVal, { highlightAsAction: false });
     }
   }
 
@@ -469,8 +562,10 @@ export function createDevicePanelController({ deviceService, state }) {
           selectBrand(inferred, { focusInput: false, preserveInput: true });
         }
         renderLiveSuggestions(inputEl.value);
+        syncGoogleFallbackLink(inputEl.value, { highlightAsAction: false });
       });
     }
+    syncGoogleFallbackLink(inputEl ? inputEl.value : '', { highlightAsAction: false });
   }
 
   async function handleDeviceLookup(rawQuery, options = {}) {
@@ -492,12 +587,23 @@ export function createDevicePanelController({ deviceService, state }) {
         btn.disabled = true;
         btn.textContent = 'Consultando...';
       }
+      syncGoogleFallbackLink(trimmed, { highlightAsAction: false });
       showDeviceFeedback('info', `Consultando especificações de "${trimmed}"...`);
     }
 
-    const lookup = await deviceService.lookupDevice(rawQuery, {
-      brandId: effectiveBrandId
-    });
+    let lookup;
+    try {
+      lookup = await deviceService.lookupDevice(rawQuery, {
+        brandId: effectiveBrandId
+      });
+    } catch {
+      lookup = {
+        status: 'error',
+        device: null,
+        origin: 'online',
+        message: 'Não foi possível consultar agora.'
+      };
+    }
     if (seq !== state.deviceLookupSeq) return;
 
     if (btn) {
@@ -508,6 +614,7 @@ export function createDevicePanelController({ deviceService, state }) {
     if (lookup.status === 'found' && lookup.device) {
       state.selectedDevice = lookup.device;
       hideDeviceFeedback();
+      syncGoogleFallbackLink(trimmed, { highlightAsAction: false });
       renderDeviceComparisonPanel(lookup.device, state.lastResult);
       return;
     }
@@ -515,8 +622,25 @@ export function createDevicePanelController({ deviceService, state }) {
     state.selectedDevice = null;
     const panel = document.getElementById('deviceResultPanel');
     if (panel) panel.classList.add('hidden');
-    const feedbackTone = lookup.status === 'error' ? 'danger' : 'warning';
-    showDeviceFeedback(feedbackTone, lookup.message || 'Dispositivo não encontrado.');
+
+    if (lookup.status === 'empty' || !trimmed) {
+      syncGoogleFallbackLink('', { highlightAsAction: false });
+      showDeviceFeedback('warning', lookup.message || 'Informe o modelo do aparelho.');
+      return;
+    }
+
+    const googleUrl = syncGoogleFallbackLink(trimmed, { highlightAsAction: true });
+
+    if (lookup.status === 'error') {
+      showDeviceFeedback('danger', 'Não foi possível consultar agora.', { googleUrl });
+      return;
+    }
+
+    showDeviceFeedback(
+      'warning',
+      `Não encontramos “${trimmed}” nas fontes consultadas.`,
+      { googleUrl }
+    );
   }
 
   function renderPopularDeviceChips() {
