@@ -305,57 +305,138 @@ test("Postel's law: expandTolerantDeviceQuery aceita entradas coladas, sem marca
 
 test("Postel's law: DeviceSpecsService resolve buscas tolerantes (a10, s25fe, iphone16, e22)", async () => {
   /** @type {string[]} */
-  const requestedQueries = [];
+  const requestedUrls = [];
+  /** @type {string[]} */
+  const requestedWikiQueries = [];
+
+  /** @type {Record<string, { title: string, manufacturer: string, model: string, connectivity: string }>} */
+  const wikiCatalog = {
+    'galaxy a10': {
+      title: 'Samsung Galaxy A10',
+      manufacturer: 'Samsung',
+      model: 'Galaxy A10',
+      connectivity: 'Wi-Fi 802.11 b/g/n',
+    },
+    'iphone 16': {
+      title: 'iPhone 16',
+      manufacturer: 'Apple Inc.',
+      model: 'iPhone 16',
+      connectivity: 'Wi-Fi 7',
+    },
+    'galaxy s25 fe': {
+      title: 'Samsung Galaxy S25 FE',
+      manufacturer: 'Samsung',
+      model: 'Galaxy S25 FE',
+      connectivity: 'Wi-Fi 6E',
+    },
+  };
 
   const mockFetch = async (/** @type {string | URL} */ url) => {
-    const parsedUrl = new URL(String(url), 'https://testai.local');
-    const q = parsedUrl.searchParams.get('q') || '';
-    requestedQueries.push(q);
-    const [manufacturer] = q.split(' ');
+    const rawUrl = String(url);
+    requestedUrls.push(rawUrl);
+    const parsedUrl = new URL(rawUrl, 'https://testai.local');
 
-    return /** @type {any} */ ({
-      ok: true,
-      status: 200,
-      async json() {
-        return {
-          device: {
-            manufacturer: manufacturer === 'Galaxy' ? 'Samsung' : manufacturer,
-            model: q,
-            wifiStandard: 'Wi-Fi 6E',
-            wifiGeneration: 6,
-            wifiBands: ['2.4 GHz', '5 GHz', '6 GHz'],
-            theoreticalMaxLinkMbps: 2400,
-            practicalWifiRangeMbps: [450, 950],
-            cellularSummary: '5G + 4G LTE',
-            source: 'MockAPI',
-          },
-        };
-      },
-    });
+    if (parsedUrl.hostname.includes('jsdelivr.net')) {
+      return /** @type {any} */ ({
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            'XT2239-10': { brand: 'Motorola', name: 'moto e22' },
+          };
+        },
+      });
+    }
+
+    const action = parsedUrl.searchParams.get('action');
+    const list = parsedUrl.searchParams.get('list');
+    if (action === 'query' && list === 'search') {
+      const srsearch = (parsedUrl.searchParams.get('srsearch') || '').trim();
+      if (parsedUrl.hostname === 'en.wikipedia.org') {
+        requestedWikiQueries.push(srsearch);
+      }
+      const match = wikiCatalog[srsearch.toLowerCase()];
+      return /** @type {any} */ ({
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            query: {
+              search: match ? [{ title: match.title }] : [],
+            },
+          };
+        },
+      });
+    }
+
+    if (action === 'query' && parsedUrl.searchParams.get('prop') === 'revisions') {
+      const titles = parsedUrl.searchParams.get('titles') || '';
+      const entry = Object.values(wikiCatalog).find((item) => item.title === titles);
+      return /** @type {any} */ ({
+        ok: true,
+        status: 200,
+        async json() {
+          if (!entry) return { query: { pages: {} } };
+          return {
+            query: {
+              pages: {
+                101: {
+                  pageid: 101,
+                  title: entry.title,
+                  revisions: [
+                    {
+                      slots: {
+                        main: {
+                          '*': `{{Infobox mobile phone
+| name = ${entry.model}
+| manufacturer = ${entry.manufacturer}
+| connectivity = ${entry.connectivity}
+| networks = 5G, LTE
+}}`,
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        },
+      });
+    }
+
+    return /** @type {any} */ ({ ok: false, status: 404, async json() { return {}; } });
   };
 
   const service = new DeviceSpecsService({ fetchImpl: mockFetch });
 
   const a10 = await service.lookupDevice('a10');
   assert.equal(a10.status, 'found');
+  assert.equal(a10.origin, 'wikipedia-online');
   assert.match(a10.device.model, /A10/i);
 
   const iphone16 = await service.lookupDevice('iphone16');
   assert.equal(iphone16.status, 'found');
+  assert.equal(iphone16.origin, 'wikipedia-online');
   assert.match(iphone16.device.model, /iPhone 16/i);
 
   const e22 = await service.lookupDevice('e22');
   assert.equal(e22.status, 'found');
-  assert.match(e22.device.model, /E22/i);
+  assert.equal(e22.origin, 'google-play-registry');
+  assert.equal(e22.device.manufacturer, 'Motorola');
+  assert.match(e22.device.model, /e22/i);
 
   const s25fe = await service.lookupDevice('s25fe');
   assert.equal(s25fe.status, 'found');
+  assert.equal(s25fe.origin, 'wikipedia-online');
   assert.match(s25fe.device.model, /S25 FE/i);
 
-  assert.deepEqual(requestedQueries, [
-    'Galaxy A10',
-    'iPhone 16',
-    'Moto E22',
-    'Galaxy S25 FE',
-  ]);
+  assert.equal(
+    requestedUrls.some((u) => u.includes('/api/device-specs')),
+    false,
+    'Não deve mais chamar /api/device-specs'
+  );
+  assert.ok(requestedWikiQueries.includes('Galaxy A10'));
+  assert.ok(requestedWikiQueries.includes('iPhone 16'));
+  assert.ok(requestedWikiQueries.includes('Galaxy S25 FE'));
 });

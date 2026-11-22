@@ -8,8 +8,6 @@ Guia vivo para consulta rápida de módulos, contratos DOM, invariantes de desig
 
 ```text
 TestAi/
-├─ api/
-│  └─ device-specs.js               # Endpoint serverless (/api/device-specs): MobileAPI.dev, rate limit e cache
 ├─ docs/
 │  └─ ARCHITECTURE.md               # Este mapa arquitetural
 ├─ tsconfig.json                    # Verificação estática JSDoc (checkJs: true) sobre src/
@@ -25,7 +23,7 @@ TestAi/
 │  ├─ lab/
 │  │  └─ profiles.js                # Perfis candidatos isolados para lab.html
 │  ├─ services/
-│  │  ├─ device-specs.service.js    # Orquestração /api/device-specs -> Wikipedia -> Google Play Registry
+│  │  ├─ device-specs.service.js    # Orquestração 100% client-side: Wikipedia (EN/PT) -> Google Play Registry
 │  │  └─ speedtest.service.js       # Motor multi-stream resiliente contra Cloudflare Edge (/__down e /__up)
 │  ├─ storage/
 │  │  └─ history.storage.js         # Persistência localStorage, comparação, JSON/CSV e laudo .TXT
@@ -58,12 +56,14 @@ TestAi/
 │  ├─ helpers.js                    # Mocks de DOM/localStorage e fixtures
 │  ├─ testai.test.js                # Smoke tests dos contratos de exportação pública dos módulos
 │  ├─ diagnostics.test.js           # Regras de diagnóstico, upload local, gaming e cards práticos
-│  ├─ device-specs.test.js          # Lookup online, normalização &nbsp;, categorias/bandas e API
+│  ├─ device-specs.test.js          # Lookup online (Wikipedia + Google Play), &nbsp;, categorias e bandas Wi-Fi
 │  ├─ speedtest-storage.test.js     # Perfis, mediana 0.5, média/pico, formatadores e histórico
-│  └─ ui-integrity.test.js          # Contratos HTML, CSS modular, tokens e inicialização de main.js
+│  ├─ ui-integrity.test.js          # Contratos HTML, CSS modular, tokens e inicialização de main.js
+│  └─ ux-motion-postel.test.js      # Animações NOC, prefers-reduced-motion, staging focus e Postel's law
 ├─ index.html                       # Aplicação principal (Modo Simples + Modo Avançado)
 ├─ lab.html                         # Bancada isolada TestAi Lab (dev)
-└─ vite.config.js                   # Proxy /api/device-specs sob demanda (sem quebrar HMR)
+├─ vercel.json                      # Configuração de build estático e cabeçalhos HTTP de segurança
+└─ vite.config.js                   # Configuração de build estático Vite (`base: './'`)
 ```
 
 ---
@@ -79,7 +79,7 @@ TestAi/
 | Regras de diagnóstico e upload local | [`src/diagnostics/connection-diagnostics.js`](../src/diagnostics/connection-diagnostics.js) |
 | Gráficos Canvas (cores, eixos, legendas) | [`src/components/charts.js`](../src/components/charts.js) |
 | Perfis e blocos de medição Cloudflare | [`src/config/speedtest.config.js`](../src/config/speedtest.config.js) |
-| Endpoint serverless `/api/device-specs` | [`api/device-specs.js`](../api/device-specs.js) |
+| Busca tolerante e lookup Wikipedia/Google Play | [`src/services/device-specs.service.js`](../src/services/device-specs.service.js) |
 
 ---
 
@@ -102,7 +102,7 @@ TestAi/
    - Fontes nunca menores que `13px` (`0.8125rem`).
    - Violeta (`--series-up`) restrito a elementos gráficos/UI (`>= 3:1`), nunca em texto pequeno.
 3. **Sem culpar provedor automaticamente no upload:** falhas parciais e upload baixo isolado informam primeiro possível limitação no envio deste dispositivo/rede local para a internet.
-4. **Segurança:** toda renderização usa `textContent` / `createEl`; `MOBILEAPI_KEY` permanece estritamente no servidor (`api/device-specs.js`).
+4. **Segurança e arquitetura estática:** aplicação 100% estática (sem backend serverless nem chaves de API), toda renderização usa `textContent` / `createEl` e o `vercel.json` aplica cabeçalhos CSP/HSTS/anti-framing.
 
 ---
 

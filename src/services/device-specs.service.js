@@ -1,8 +1,7 @@
 /**
- * Serviço de consulta ONLINE de especificações e identificação de smartphones.
- * Camada 1: Proxy Serverless dedicado (/api/device-specs -> MobileAPI.dev com chave segura no servidor).
- * Camada 2: MediaWiki / Wikipedia Online (Infobox com desembrulhamento recursivo + seção técnica do artigo).
- * Camada 3: Google Play Certified Devices Registry via jsDelivr CDN (30.000+ modelos regionais/antigos).
+ * Serviço de consulta ONLINE de especificações e identificação de smartphones (100% client-side).
+ * Camada 1: MediaWiki / Wikipedia Online EN e PT (Infobox com desembrulhamento recursivo + seção técnica do artigo).
+ * Camada 2: Google Play Certified Devices Registry via jsDelivr CDN (30.000+ modelos regionais/antigos).
  * A classificação (Básico / Médio / Alto Desempenho) e as médias por banda Wi-Fi são derivadas
  * deterministicamente a partir do hardware, geração Wi-Fi e linha comercial do aparelho.
  */
@@ -38,25 +37,6 @@ function normalizeTokens(text) {
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
     .filter(Boolean);
-}
-
-function resolveSafeProxyUrl() {
-  const rawUrl =
-    typeof import.meta !== 'undefined' && import.meta.env
-      ? import.meta.env.VITE_DEVICE_API_PROXY_URL
-      : undefined;
-
-  if (rawUrl === 'off' || rawUrl === 'false') return null;
-
-  const trimmed = String(rawUrl || '/api/device-specs').trim();
-  if (trimmed.startsWith('/')) return trimmed;
-
-  try {
-    const parsed = new URL(trimmed);
-    return parsed.protocol === 'https:' ? parsed.toString() : '/api/device-specs';
-  } catch {
-    return '/api/device-specs';
-  }
 }
 
 /**
@@ -772,7 +752,6 @@ export function expandTolerantDeviceQuery(rawQuery) {
 
 export class DeviceSpecsService {
   constructor(options = {}) {
-    this.proxyUrl = options.proxyUrl !== undefined ? options.proxyUrl : resolveSafeProxyUrl();
     this.fetchImpl = options.fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     this.googlePlayRegistryUrl = options.googlePlayRegistryUrl || GOOGLE_PLAY_DEVICES_CDN;
     this.sessionCache = new Map();
@@ -815,44 +794,7 @@ export class DeviceSpecsService {
       return this.sessionCache.get(cacheKey);
     }
 
-    // 1. Proxy serverless dedicado (MobileAPI.dev via /api/device-specs, se configurado no servidor)
-    if (this.proxyUrl) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      try {
-        const separator = this.proxyUrl.includes('?') ? '&' : '?';
-        const response = await this.fetchImpl(
-          `${this.proxyUrl}${separator}q=${encodeURIComponent(query)}`,
-          {
-            method: 'GET',
-            headers: { Accept: 'application/json' },
-            signal: controller.signal
-          }
-        );
-
-        const contentType = response.headers?.get?.('content-type') || '';
-        if (response.ok && (!contentType || contentType.includes('application/json'))) {
-          const data = await response.json();
-          const normalized = normalizeDevicePayload(data?.device || data);
-          if (normalized) {
-            const payload = {
-              status: 'found',
-              device: normalized,
-              origin: 'proxy-api',
-              message: null
-            };
-            this.sessionCache.set(cacheKey, payload);
-            return payload;
-          }
-        }
-      } catch {
-        // Segue automaticamente para as fontes online abertas
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-
-    // 2. Wikipedia Online (Infobox desembrulhado + texto técnico do artigo)
+    // 1. Wikipedia Online (Infobox desembrulhado + texto técnico do artigo)
     try {
       for (const endpoint of WIKI_ENDPOINTS) {
         const foundDevice = await searchMediaWikiEndpoint(
@@ -876,7 +818,7 @@ export class DeviceSpecsService {
       // Segue para o registro oficial do Google Play
     }
 
-    // 3. Google Play Certified Devices Registry (30.000+ modelos: antigos, regionais e de entrada)
+    // 2. Google Play Certified Devices Registry (30.000+ modelos: antigos, regionais e de entrada)
     try {
       const registryDevice = await searchGooglePlayRegistry(
         query,

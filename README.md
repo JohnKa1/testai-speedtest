@@ -70,18 +70,14 @@ Aplicação web de diagnóstico de rede e análise comparativa de capacidade Wi-
 ---
 
 ### 1.5 Onde Consultamos as Especificações dos Celulares
-O módulo de **Inteligência de Dispositivos** (`src/services/device-specs.service.js` + `api/device-specs.js`) consulta fontes online em **3 camadas com fallback automático**:
+O módulo de **Inteligência de Dispositivos** (`src/services/device-specs.service.js`) opera **100% no navegador (sem backend nem chaves de API)** consultando fontes online abertas em **2 camadas com fallback automático** e busca tolerante a digitações compactas/sem espaço (*Postel's law*, ex.: `a10`, `s25fe`, `iphone16`, `motog84`, `e22`, mantendo códigos homologados como `SM-A065M` intactos):
 
-1. **Camada 1 — Proxy Serverless `/api/device-specs` → [MobileAPI.dev](https://mobileapi.dev):**
-   - Executada estritamente no servidor Node (`api/device-specs.js`) quando `MOBILEAPI_KEY` está configurada (nunca exposta no cliente).
-   - Extrai SoC/chipset, RAM, geração e padrões Wi-Fi (`/6`, `/6e`, `/7`), redes 4G/5G e variante regional.
-   - Proteções: cache em memória com TTL de 12h (limite `500` entradas), *rate limit* de `20 req/min` por IP (`HTTP 429`), validação opcional de origem via `ALLOWED_ORIGIN` e cabeçalhos `X-Content-Type-Options: nosniff` e `Referrer-Policy: no-referrer`.
-2. **Camada 2 — Wikipedia Online (MediaWiki API EN e PT):**
-   - Consulta `https://en.wikipedia.org/w/api.php` e `https://pt.wikipedia.org/w/api.php`, realizando *parsing* e desembrulhamento recursivo de `Infobox` (`{{...}}`) e normalização de entidades HTML (`&nbsp;`, `&#160;`). Funciona integralmente mesmo sem `MOBILEAPI_KEY`.
-3. **Camada 3 — Google Play Certified Devices Registry (via jsDelivr CDN):**
-   - Consulta `https://cdn.jsdelivr.net/gh/bsthen/device-models/devices.json` para mapear modelos regionais, códigos de fabricante e aparelhos de entrada/legados.
+1. **Camada 1 — Wikipedia Online (MediaWiki API EN e PT):**
+   - Consulta `https://en.wikipedia.org/w/api.php` e `https://pt.wikipedia.org/w/api.php`, realizando *parsing* e desembrulhamento recursivo de `Infobox` (`{{...}}`) e normalização de entidades HTML (`&nbsp;`, `&#160;`) para extrair SoC/chipset, RAM, geração/padrões Wi-Fi (`/6`, `/6e`, `/7`) e suporte 4G/5G.
+2. **Camada 2 — Google Play Certified Devices Registry (via jsDelivr CDN):**
+   - Consulta `https://cdn.jsdelivr.net/gh/bsthen/device-models/devices.json` para mapear mais de 30.000 modelos regionais, códigos homologados de fabricante e aparelhos de entrada/legados.
 
-A partir dos dados obtidos, `src/diagnostics/capability-advisor.js` classifica determinísticamente o smartphone (**Básico**, **Médio** ou **Alto Desempenho**), estima a **média real em Mbps por banda Wi-Fi (`2,4 GHz`, `5 GHz` e `6 GHz`)** e separa explicitamente:
+A partir dos dados obtidos, `src/diagnostics/capability-advisor.js` classifica deterministicamente o smartphone (**Básico**, **Médio** ou **Alto Desempenho**), estima a **média real em Mbps por banda Wi-Fi (`2,4 GHz`, `5 GHz` e `6 GHz`)** e separa explicitamente:
 1. Especificação Teórica Documentada
 2. Estimativa em Condições Favoráveis
 3. Velocidade Medida Neste Navegador
@@ -90,7 +86,7 @@ A partir dos dados obtidos, `src/diagnostics/capability-advisor.js` classifica d
 
 ### 1.6 Privacidade, Armazenamento Local e Segurança
 - **Histórico 100% local:** as medições ficam salvas apenas no `localStorage` do navegador (`chave testai_history_v2`, máximo de `100` registros), com comparação lado a lado e exportação em `.json`, `.csv` e laudo técnico `.txt`. Nenhum banco externo armazena resultados do usuário.
-- **Segurança no cliente e no servidor:** toda inserção de texto no DOM usa `textContent` (prevenção contra XSS); variáveis sensíveis permanecem no `.env` (ignorado pelo Git) e lidas apenas pelo backend serverless.
+- **Aplicação 100% estática e segura:** toda inserção de texto no DOM usa `textContent` (prevenção contra XSS), não há segredos/chaves de API nem backend serverless, e o [vercel.json](./vercel.json) aplica cabeçalhos HTTP de endurecimento (`Content-Security-Policy`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` e `Permissions-Policy`).
 
 ---
 
@@ -99,12 +95,11 @@ A partir dos dados obtidos, `src/diagnostics/capability-advisor.js` classifica d
 Veja o mapa completo de diretórios, contratos DOM críticos e invariantes em [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md):
 
 - `src/config/`: perfis multi-stream (`TEST_PROFILES`) e limiares de diagnóstico/gaming.
-- `src/services/`: motor de velocidade (`speedtest.service.js`) e lookup em 3 camadas (`device-specs.service.js`).
+- `src/services/`: motor de velocidade (`speedtest.service.js`) e lookup online em 2 camadas abertas (`device-specs.service.js`).
 - `src/diagnostics/`: regras puras de diagnóstico de rede, gaming e capacidade de dispositivos.
 - `src/ui/` e `src/main.js`: camada de interface desacoplada coordenada por `initApp()`.
 - `src/styles/`: design system modular baseado em tokens CSS em `tokens.css` (dark mode técnico com contraste WCAG 2.2 AA).
 - `src/types.js` e `tsconfig.json`: contratos JSDoc validados via TypeScript (`checkJs: true`).
-- `api/device-specs.js`: handler serverless compatível com Vercel, Netlify e proxy local do Vite.
 - `lab.html`, `src/lab/` e `scripts/benchmark-profiles.mjs`: bancada isolada (*TestAi Lab*) para simular ou comparar perfis sequenciais com `@cloudflare/speedtest`.
 - `tests/`: suítes unitárias e de integridade modular (`node --test tests/*.test.js`).
 
@@ -120,18 +115,12 @@ Veja o mapa completo de diretórios, contratos DOM críticos e invariantes em [`
 npm install
 ```
 
-### 2. Configurar variáveis de ambiente (opcional)
-```bash
-cp .env.example .env
-```
-> Sem `MOBILEAPI_KEY`, o TestAi utiliza automaticamente as Camadas 2 e 3 (Wikipedia e Google Play Registry). Em produção com backend próprio, defina `ALLOWED_ORIGIN` com a URL oficial da aplicação para restringir CORS em `/api/device-specs`.
-
-### 3. Iniciar servidor de desenvolvimento
+### 2. Iniciar servidor de desenvolvimento
 ```bash
 npm run dev
 ```
 
-### 4. Executar checagem de tipos, testes e build
+### 3. Executar checagem de tipos, testes e build
 ```bash
 npm run typecheck
 npm test
@@ -139,7 +128,7 @@ npm run build
 npm run preview
 ```
 
-### 5. Simulador offline de perfis (TestAi Lab)
+### 4. Simulador offline de perfis (TestAi Lab)
 ```bash
 node scripts/benchmark-profiles.mjs
 ```
