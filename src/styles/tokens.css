@@ -48,6 +48,15 @@
   --ok-pulse-ring: rgba(16, 185, 129, 0.38);
   --progress-sheen: rgba(96, 165, 250, 0.22);
 
+  /* Camada de fundo em rede e vidro fosco (Dossiê Fundo & Vidro) */
+  --glass-bg: rgba(21, 28, 44, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-blur: 14px;
+
+  --bg-glow-1: rgba(0, 229, 255, 0.10);
+  --bg-glow-2: rgba(139, 92, 246, 0.10);
+  --bg-glow-3: rgba(96, 165, 250, 0.08);
+
   /* Movimento NOC (Slow in & slow out + Snappy timing) */
   --ease-noc: cubic-bezier(0.22, 1, 0.36, 1);
   --dur-fast: 150ms;
