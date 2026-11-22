@@ -47,6 +47,7 @@ import {
   downloadFile,
   hideStatusBanner,
   resetTelemetryUI,
+  setActiveMetricPhase,
   setAllTelemetryEmpty,
   setContainerEmpty,
   setRunningControls,
@@ -229,6 +230,7 @@ const speedTestService = new SpeedTestService({
 
   onFinish(result) {
     stopDisplayLoop();
+    setActiveMetricPhase(null);
     setRunningControls(false);
     handleCompletedResult(result);
     if (state.backgroundedDuringRun) {
@@ -241,6 +243,7 @@ const speedTestService = new SpeedTestService({
 
   onCancel() {
     stopDisplayLoop();
+    setActiveMetricPhase(null);
     setRunningControls(false);
     setAllTelemetryEmpty(false);
     renderCapabilitiesSkeleton({ busy: false });
@@ -257,6 +260,7 @@ const speedTestService = new SpeedTestService({
   onError(errorPayload) {
     const failedPhase = state.activePhase;
     stopDisplayLoop();
+    setActiveMetricPhase(null);
     setRunningControls(false);
     state.activePhase = 'error';
     setText('phaseLabel', PHASE_LABELS.error);
@@ -281,6 +285,7 @@ const speedTestService = new SpeedTestService({
 
 function applyLiveTelemetryUpdate(payload) {
   const { phase, progressPercent, snapshot } = payload;
+  setActiveMetricPhase(phase);
 
   const previousPhase = state.activePhase;
   state.activePhase = phase;

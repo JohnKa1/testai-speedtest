@@ -218,6 +218,10 @@ export function createDevicePanelController({ deviceService, state }) {
       const btn = createEl('button', 'chip-btn', label);
       btn.type = 'button';
       btn.addEventListener('click', () => {
+        container.querySelectorAll('.chip-btn.is-active').forEach((el) => {
+          el.classList.remove('is-active');
+        });
+        btn.classList.add('is-active');
         const input = /** @type {HTMLInputElement | null} */ (
           document.getElementById('deviceQueryInput')
         );

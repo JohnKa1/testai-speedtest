@@ -140,7 +140,8 @@ body[data-ui-mode='advanced'] .app-shell {
   padding: var(--sp-2) var(--sp-4);
   border-radius: var(--r-pill);
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  touch-action: manipulation;
+  transition: background-color 180ms var(--ease-noc), color 180ms var(--ease-noc);
 }
 
 .mode-btn.active {

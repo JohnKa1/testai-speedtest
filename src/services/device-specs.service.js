@@ -676,6 +676,100 @@ async function searchGooglePlayRegistry(query, queryTokens, fetchImpl, registryU
   });
 }
 
+/**
+ * Expande entradas compactas, sem espacos ou em minusculas (Postel's law)
+ * preservando codigos de modelo/SKU intactos (ex.: SM-A065M, XT2239-10).
+ *
+ * @param {string} rawQuery
+ * @returns {string}
+ */
+export function expandTolerantDeviceQuery(rawQuery) {
+  const cleaned = sanitizeDeviceQuery(rawQuery);
+  if (!cleaned) return '';
+
+  // Preserva códigos/SKU de fabricante intactos (SM-A065M, XT2239-10, RMX3771 etc.)
+  if (
+    /^(?:sm-[a-z0-9-]+|xt\d{3,}[a-z0-9-]*|rmx\d{3,}[a-z0-9-]*|cph\d{3,}[a-z0-9-]*|[a-z]{1,4}\d{3,}-\d+[a-z0-9-]*)$/i.test(
+      cleaned
+    ) ||
+    /\b(?:sm-[a-z0-9-]+|xt\d{3,}[a-z0-9-]*)\b/i.test(cleaned)
+  ) {
+    return cleaned;
+  }
+
+  let normalized = cleaned
+    .replace(/[_/]+/g, ' ')
+    .replace(/-(?![a-z0-9]*\d{3,})/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Separa prefixos de linha/marca colados sem espaço
+  normalized = normalized
+    .replace(/\biphone(?=[a-z0-9])/gi, 'iPhone ')
+    .replace(/\bipad(pro|air|mini)?(\d+[a-z0-9]*)?/gi, (_, tier, num) =>
+      ['iPad', tier, num].filter(Boolean).join(' ')
+    )
+    .replace(/\bgalaxy([a-z0-9]+)/gi, 'Galaxy $1')
+    .replace(/\bmoto([egxz]\d[a-z0-9]*)/gi, 'Moto $1')
+    .replace(/\bedge(\d[a-z0-9]*)/gi, 'Edge $1')
+    .replace(/\bredmi(note)?(\d[a-z0-9]*)/gi, (_, note, rest) =>
+      ['Redmi', note, rest].filter(Boolean).join(' ')
+    )
+    .replace(/\bpoco([a-z]\d[a-z0-9]*)/gi, 'Poco $1')
+    .replace(/\bpixel(\d[a-z0-9]*)/gi, 'Pixel $1')
+    .replace(/\bz(flip|fold)(\d[a-z0-9]*)/gi, 'Z $1 $2');
+
+  // Separa sufixos comerciais colados ao número do modelo
+  normalized = normalized
+    .replace(
+      /(\d)(?=(?:promax|pro|ultra|plus|mini|lite|neo|fe|fusion|max|air|play|power|prime)(?:5g|4g)?(?:\s|$))/gi,
+      '$1 '
+    )
+    .replace(/\bpromax\b/gi, 'Pro Max')
+    .replace(
+      /\b(pro|ultra|plus|mini|lite|neo|fe|fusion|max|air|play|power|prime)(5g|4g)\b/gi,
+      '$1 $2'
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Normaliza caixa dos sufixos comerciais comuns
+  normalized = normalized
+    .replace(/\biphone\b/gi, 'iPhone')
+    .replace(/\bipad\b/gi, 'iPad')
+    .replace(/\bgalaxy\b/gi, 'Galaxy')
+    .replace(/\bmoto\b/gi, 'Moto')
+    .replace(/\bedge\b/gi, 'Edge')
+    .replace(/\bredmi\b/gi, 'Redmi')
+    .replace(/\bpoco\b/gi, 'Poco')
+    .replace(/\bpixel\b/gi, 'Pixel')
+    .replace(/\bnote\b/gi, 'Note')
+    .replace(/\bpro\b/gi, 'Pro')
+    .replace(/\bmax\b/gi, 'Max')
+    .replace(/\bultra\b/gi, 'Ultra')
+    .replace(/\bplus\b/gi, 'Plus')
+    .replace(/\bmini\b/gi, 'Mini')
+    .replace(/\blite\b/gi, 'Lite')
+    .replace(/\bneo\b/gi, 'Neo')
+    .replace(/\bfe\b/gi, 'FE')
+    .replace(/\b5g\b/gi, '5G')
+    .replace(/\b4g\b/gi, '4G')
+    .replace(/\b([a-z])(\d+[a-z]?)\b/gi, (_, letter, rest) => `${letter.toUpperCase()}${rest}`);
+
+  // Expande códigos curtos de 1 token (ex.: "a10", "s25 fe", "e22", "g84")
+  if (/^(?:s2\d(?:\s+(?:FE|Plus|Ultra|Edge|5G))?|a0[56]|a1\d|a2\d|a3\d|a5\d)$/i.test(normalized)) {
+    return `Galaxy ${normalized.toUpperCase().replace(/\bPLUS\b/g, 'Plus').replace(/\bULTRA\b/g, 'Ultra').replace(/\bEDGE\b/g, 'Edge')}`;
+  }
+  if (/^(?:e1[34]|e2[02]|e32|g24|g34|g54|g84)$/i.test(normalized)) {
+    return `Moto ${normalized.toUpperCase()}`;
+  }
+  if (/^Z\s+(?:Flip|Fold)\s+\d+/i.test(normalized)) {
+    return `Galaxy ${normalized.replace(/\b(flip|fold)\b/gi, (m) => m[0].toUpperCase() + m.slice(1).toLowerCase())}`;
+  }
+
+  return normalized;
+}
+
 export class DeviceSpecsService {
   constructor(options = {}) {
     this.proxyUrl = options.proxyUrl !== undefined ? options.proxyUrl : resolveSafeProxyUrl();
@@ -696,7 +790,7 @@ export class DeviceSpecsService {
   }
 
   async lookupDevice(rawQuery) {
-    const query = sanitizeDeviceQuery(rawQuery);
+    const query = expandTolerantDeviceQuery(rawQuery);
     if (!query) {
       return {
         status: 'empty',

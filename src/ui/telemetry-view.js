@@ -103,6 +103,54 @@ export function updateLoadedJitterUI(dlJitterMetric, ulJitterMetric, showEmptyWh
   );
 }
 
+/** @type {Record<string, { accent: string | null, selectors: string[] }>} */
+const PHASE_FOCUS_MAP = Object.freeze({
+  latency: {
+    accent: null,
+    selectors: ['#simplePingVal', '#pingValue'],
+  },
+  download: {
+    accent: 'download',
+    selectors: ['#simpleDownloadVal', '#downloadLatencyValue'],
+  },
+  upload: {
+    accent: 'upload',
+    selectors: ['#simpleUploadVal', '#uploadValue'],
+  },
+});
+
+/**
+ * Destaca sutilmente o indicador correspondente à etapa ativa do teste
+ * ("Staging the focus"), mantendo os demais cards em estado neutro.
+ *
+ * @param {string | null | undefined} phase
+ */
+export function setActiveMetricPhase(phase) {
+  if (typeof document === 'undefined') return;
+  document
+    .querySelectorAll('.simple-stat.is-active-phase, .metric-card.is-active-phase')
+    .forEach((el) => {
+      el.classList.remove('is-active-phase');
+      el.removeAttribute('data-phase-accent');
+    });
+
+  const spec =
+    phase && Object.prototype.hasOwnProperty.call(PHASE_FOCUS_MAP, phase)
+      ? PHASE_FOCUS_MAP[phase]
+      : null;
+  if (!spec) return;
+
+  for (const selector of spec.selectors) {
+    const valueEl = document.querySelector(selector);
+    const cardEl = valueEl?.closest('.simple-stat, .metric-card');
+    if (!cardEl) continue;
+    cardEl.classList.add('is-active-phase');
+    if (spec.accent) {
+      cardEl.setAttribute('data-phase-accent', spec.accent);
+    }
+  }
+}
+
 export function resetTelemetryUI(profileLabel, thermometer) {
   setAllTelemetryEmpty(true);
   updateSimpleGauge(0, 'idle');
@@ -150,7 +198,8 @@ export function resetTelemetryUI(profileLabel, thermometer) {
   setText('loadedJitterBreakdownMeta', '↓ — · ↑ — ms');
 
   thermometer?.reset();
-  updateProgressBar(2, `Inicializando perfil ${profileLabel}...`);
+  setActiveMetricPhase('latency');
+  updateProgressBar(4, `Inicializando perfil ${profileLabel}...`);
 
   renderThroughputChart(document.getElementById('throughputChart'), [], []);
   renderLatencyComparisonChart(document.getElementById('latencyChart'), null);
@@ -166,7 +215,9 @@ export function setRunningControls(isRunning) {
   const phaseBadge = document.getElementById('phaseLabel');
   const simplePhaseBadge = document.getElementById('simplePhaseLabel');
   const thermoFill = document.getElementById('thermoFill');
+  const progressSection = document.getElementById('progressSection');
 
+  if (progressSection) progressSection.classList.toggle('is-running', isRunning);
   if (panel) panel.setAttribute('aria-busy', String(isRunning));
   if (profileSel) profileSel.disabled = isRunning;
 

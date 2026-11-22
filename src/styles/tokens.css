@@ -45,6 +45,13 @@
   --skeleton-base: rgba(255, 255, 255, 0.04);
   --skeleton-peak: rgba(255, 255, 255, 0.09);
   --shadow-tooltip: rgba(0, 0, 0, 0.45);
+  --ok-pulse-ring: rgba(16, 185, 129, 0.38);
+  --progress-sheen: rgba(96, 165, 250, 0.22);
+
+  /* Movimento NOC (Slow in & slow out + Snappy timing) */
+  --ease-noc: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 150ms;
+  --dur-snappy: 220ms;
 
   /* Fontes & Tipografia (piso absoluto de 13px / 0.8125rem) */
   --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;

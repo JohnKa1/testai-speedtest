@@ -33,7 +33,7 @@
 }
 
 .chip-btn {
-  min-height: 44px;
+  min-height: 46px;
   display: inline-flex;
   align-items: center;
   background: var(--surface-2);
@@ -45,12 +45,23 @@
   padding: var(--sp-2) var(--sp-4);
   border-radius: var(--r-pill);
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  touch-action: manipulation;
+  transition:
+    background-color var(--dur-fast) var(--ease-noc),
+    border-color var(--dur-fast) var(--ease-noc),
+    color var(--dur-fast) var(--ease-noc);
 }
 
 .chip-btn:hover {
   background: var(--surface-hover);
   border-color: var(--line-strong);
+  color: var(--text-1);
+}
+
+.chip-btn.is-active,
+.chip-btn.is-active:hover {
+  background: var(--info-bg);
+  border-color: var(--info-line);
   color: var(--text-1);
 }
 

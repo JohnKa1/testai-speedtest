@@ -63,6 +63,43 @@
     background-size: 200% 100%;
     animation: skeletonShimmer 1.6s ease-in-out infinite;
   }
+
+  @keyframes onlineDotPulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 var(--ok-pulse-ring);
+    }
+    50% {
+      box-shadow: 0 0 0 5px transparent;
+    }
+  }
+
+  .status-dot.online {
+    animation: onlineDotPulse 2.4s var(--ease-noc) infinite;
+  }
+
+  @keyframes progressSheen {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(220%);
+    }
+  }
+
+  .progress-wrap.is-running .progress-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 45%;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--progress-sheen) 50%,
+      transparent 100%
+    );
+    animation: progressSheen 1.4s var(--ease-noc) infinite;
+  }
 }
 
 [data-tip] {

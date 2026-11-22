@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { expandTolerantDeviceQuery } from '../src/services/device-specs.service.js';
 import path from 'node:path';
 import {
   deriveDeviceCategory,
@@ -64,18 +65,15 @@ function getHeader(req, headerName) {
 }
 
 function extractClientIp(req) {
-  const forwarded = getHeader(req, 'x-forwarded-for');
-  if (forwarded) {
-    for (const part of forwarded.split(',')) {
+  for (const headerName of ['x-vercel-forwarded-for', 'x-real-ip', 'x-forwarded-for']) {
+    const raw = getHeader(req, headerName);
+    if (!raw) continue;
+    for (const part of raw.split(',')) {
       const candidate = part.trim();
       if (candidate && /^[0-9a-fA-F:.]{3,45}$/.test(candidate)) {
         return candidate;
       }
     }
-  }
-  const realIp = getHeader(req, 'x-real-ip').trim();
-  if (realIp && /^[0-9a-fA-F:.]{3,45}$/.test(realIp)) {
-    return realIp;
   }
   return (
     String(req?.socket?.remoteAddress || req?.connection?.remoteAddress || 'unknown').trim() ||
@@ -422,6 +420,8 @@ export async function handler(req, res, deps = {}) {
         if (!refererOrigin || !allowedOrigins.includes(refererOrigin)) {
           return sendJson(res, 403, { error: 'Origem não autorizada' });
         }
+      } else if (getHeader(req, 'sec-fetch-site').trim().toLowerCase() !== 'same-origin') {
+        return sendJson(res, 403, { error: 'Origem não autorizada' });
       }
     }
   }
@@ -437,7 +437,7 @@ export async function handler(req, res, deps = {}) {
 
   const parsedUrl = new URL(req.url || '', 'http://localhost');
   const rawQ = req.query?.q ?? parsedUrl.searchParams.get('q');
-  const query = sanitizeQuery(rawQ);
+  const query = expandTolerantDeviceQuery(sanitizeQuery(rawQ));
 
   if (!query || query.length < 2) {
     return sendJson(res, 400, { error: 'Consulta inválida' });

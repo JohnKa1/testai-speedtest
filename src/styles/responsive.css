@@ -23,7 +23,8 @@
     align-items: center;
   }
 
-  .control-actions button {
+  .control-actions button,
+  .simple-verdict-card .btn-secondary {
     width: auto;
   }
 
