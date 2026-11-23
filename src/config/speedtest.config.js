@@ -2,10 +2,13 @@
  * Configurações de medição multi-stream resiliente e critérios técnicos de diagnóstico do TestAi.
  */
 
+import { DEFAULT_RUNTIME_CONFIG } from '../services/runtime-config.js';
+
 const COMMON_ENGINE_OPTIONS = Object.freeze({
   autoStart: false,
-  downloadApiUrl: 'https://speed.cloudflare.com/__down',
-  uploadApiUrl: 'https://speed.cloudflare.com/__up',
+  downloadApiUrl: DEFAULT_RUNTIME_CONFIG.endpoints.down,
+  uploadApiUrl: DEFAULT_RUNTIME_CONFIG.endpoints.up,
+  pingApiUrl: DEFAULT_RUNTIME_CONFIG.endpoints.ping,
   measureDownloadLoadedLatency: true,
   measureUploadLoadedLatency: true,
   latencyPercentile: 0.5,

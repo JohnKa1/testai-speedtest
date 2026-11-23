@@ -1,0 +1,15 @@
+{
+  "ispName": "TestAi",
+  "serverLabel": "Cloudflare Edge",
+  "measurementMode": "sustained",
+  "parallelStreams": {
+    "download": 6,
+    "upload": 4
+  },
+  "endpoints": {
+    "down": "https://speed.cloudflare.com/__down",
+    "up": "https://speed.cloudflare.com/__up",
+    "ping": "https://speed.cloudflare.com/__down",
+    "meta": null
+  }
+}

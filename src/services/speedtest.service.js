@@ -7,6 +7,7 @@
  */
 
 import { TEST_PROFILES } from '../config/speedtest.config.js';
+import { DEFAULT_RUNTIME_CONFIG, getRuntimeConfig } from './runtime-config.js';
 import {
   checkBrowserCapabilities,
   clamp,
@@ -212,7 +213,7 @@ function buildProbeUrl(baseUrl, params = {}) {
   const fallbackOrigin =
     typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
-      : 'https://speed.cloudflare.com';
+      : new URL(DEFAULT_RUNTIME_CONFIG.endpoints.down).origin;
   const url = new URL(baseUrl, fallbackOrigin);
 
   for (const [key, val] of Object.entries(params)) {
@@ -318,6 +319,7 @@ export class SpeedTestService {
   constructor(callbacks = {}, deps = {}) {
     this.callbacks = callbacks;
     this.customFetch = typeof deps.fetchImpl === 'function' ? deps.fetchImpl : null;
+    this.runtimeConfig = deps.runtimeConfig || null;
     this.running = false;
     this.runId = 0;
     this.activeProfile = TEST_PROFILES.standard;
@@ -328,6 +330,13 @@ export class SpeedTestService {
     this.activeResults = null;
     this.activeContext = {};
     this.payloadCache = new Map();
+  }
+
+  /**
+   * @param {any} config
+   */
+  setRuntimeConfig(config) {
+    this.runtimeConfig = config || null;
   }
 
   isRunning() {
@@ -371,7 +380,17 @@ export class SpeedTestService {
       }
     }
 
-    const profile = TEST_PROFILES[profileId] || TEST_PROFILES.standard;
+    const baseProfile = TEST_PROFILES[profileId] || TEST_PROFILES.standard;
+    const cfg = this.runtimeConfig || getRuntimeConfig();
+    const profile = {
+      ...baseProfile,
+      options: {
+        ...baseProfile.options,
+        downloadApiUrl: cfg.endpoints.down,
+        uploadApiUrl: cfg.endpoints.up,
+        pingApiUrl: cfg.endpoints.ping
+      }
+    };
     this.activeProfile = profile;
     this.runId += 1;
     const currentRunId = this.runId;
@@ -576,7 +595,7 @@ export class SpeedTestService {
 
     // 1 sonda de aquecimento TLS/rota (descartada)
     await this._probeLatencyOnce({
-      urlBase: opts.downloadApiUrl,
+      urlBase: opts.pingApiUrl || opts.downloadApiUrl,
       during: 'warmup',
       pingTimeoutMs,
       signal,
@@ -595,7 +614,7 @@ export class SpeedTestService {
       }
 
       const rttMs = await this._probeLatencyOnce({
-        urlBase: opts.downloadApiUrl,
+        urlBase: opts.pingApiUrl || opts.downloadApiUrl,
         during: 'idle',
         pingTimeoutMs,
         signal,
@@ -802,7 +821,7 @@ export class SpeedTestService {
     if (opts.measureDownloadLoadedLatency) {
       tasks.push(
         this._runLoadedLatencyLoop({
-          urlBase: opts.downloadApiUrl,
+          urlBase: opts.pingApiUrl || opts.downloadApiUrl,
           during: 'download',
           throttleMs: opts.loadedLatencyThrottle || 400,
           pingTimeoutMs: Math.max(opts.pingTimeoutMs || 1200, 1800),
@@ -1144,7 +1163,7 @@ export class SpeedTestService {
     if (opts.measureUploadLoadedLatency) {
       tasks.push(
         this._runLoadedLatencyLoop({
-          urlBase: opts.downloadApiUrl,
+          urlBase: opts.pingApiUrl || opts.downloadApiUrl,
           during: 'upload',
           throttleMs: opts.loadedLatencyThrottle || 400,
           pingTimeoutMs: Math.max(opts.pingTimeoutMs || 1200, 1800),

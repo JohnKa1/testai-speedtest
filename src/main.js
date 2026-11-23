@@ -5,6 +5,11 @@
  */
 
 import { SpeedTestService } from './services/speedtest.service.js';
+import {
+  DEFAULT_RUNTIME_CONFIG,
+  loadRuntimeConfig,
+  setRuntimeConfig
+} from './services/runtime-config.js';
 import { evaluateConnection } from './diagnostics/connection-diagnostics.js';
 import { evaluateGamingReadiness } from './diagnostics/gaming-analyzer.js';
 import {
@@ -100,6 +105,27 @@ const state = {
 const thermometer = new ThermometerComponent();
 const deviceService = new DeviceSpecsService();
 const devicePanel = createDevicePanelController({ deviceService, state });
+
+function applyRuntimeBranding(config) {
+  if (!config || typeof document === 'undefined') return;
+
+  if (config.ispName && config.ispName !== DEFAULT_RUNTIME_CONFIG.ispName) {
+    const ispEl = document.getElementById('ispNamePill');
+    if (ispEl) {
+      ispEl.textContent = config.ispName;
+      ispEl.classList.remove('hidden');
+    }
+    document.title = `${config.ispName} — Diagnóstico Inteligente de Internet`;
+  }
+
+  if (config.serverLabel && config.serverLabel !== DEFAULT_RUNTIME_CONFIG.serverLabel) {
+    const serverEl = document.getElementById('serverInfo');
+    if (serverEl) {
+      serverEl.textContent = config.serverLabel;
+      serverEl.classList.remove('adv-only');
+    }
+  }
+}
 
 function refreshHistoryView() {
   renderHistoryPanel({
@@ -757,6 +783,14 @@ function initApp() {
   setupTabs();
   updateOnlineIndicator();
   devicePanel.renderBrandCards();
+
+  loadRuntimeConfig()
+    .then((config) => {
+      setRuntimeConfig(config);
+      speedTestService.setRuntimeConfig(config);
+      applyRuntimeBranding(config);
+    })
+    .catch(() => {});
 
   try {
     state.history = loadHistory();
