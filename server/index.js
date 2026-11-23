@@ -9,9 +9,20 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  createRateLimiter,
+  LOOKING_GLASS_PRESETS,
+  LookingGlassError,
+  probeTcpLatency,
+  resolveSafeTarget
+} from './looking-glass.js';
+
 const RAM_CHUNK_BYTES = 1024 * 1024; // 1 MiB pré-alocado no boot
 const DEFAULT_MAX_DOWNLOAD_BYTES = 104_857_600; // 100 MB
 const DEFAULT_MAX_UPLOAD_BYTES = 134_217_728; // 128 MB
+const DEFAULT_LOOKING_GLASS_BODY_BYTES = 2048; // 2 KB
+const DEFAULT_LOOKING_GLASS_RATE_LIMIT = 10; // req/min por IP
+const DEFAULT_LOOKING_GLASS_WINDOW_MS = 60_000;
 
 // Preenchido uma única vez no boot com bytes aleatórios (evita compressão transparente de proxy/rede)
 const RAM_CHUNK = crypto.randomBytes(RAM_CHUNK_BYTES);
@@ -50,6 +61,57 @@ function sendJson(res, statusCode, payload, commonHeaders, extraHeaders = {}) {
   res.end(body);
 }
 
+function readJsonBody(req, maxBytes = DEFAULT_LOOKING_GLASS_BODY_BYTES) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let totalBytes = 0;
+    let settled = false;
+
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+
+    req.on('data', (chunk) => {
+      if (settled) return;
+      totalBytes += chunk.length;
+      if (totalBytes > maxBytes) {
+        chunks.length = 0;
+        fail(
+          new LookingGlassError(
+            `Payload excede o limite de ${maxBytes} bytes.`,
+            413,
+            'PAYLOAD_TOO_LARGE'
+          )
+        );
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      if (totalBytes === 0) {
+        resolve({});
+        return;
+      }
+      try {
+        const text = Buffer.concat(chunks, totalBytes).toString('utf8');
+        const parsed = JSON.parse(text);
+        resolve(parsed);
+      } catch {
+        reject(new LookingGlassError('JSON inválido no corpo da requisição.', 400, 'INVALID_JSON'));
+      }
+    });
+
+    req.on('error', () => {
+      fail(new LookingGlassError('Erro ao ler corpo da requisição.', 400, 'READ_ERROR'));
+    });
+  });
+}
+
 /**
  * Cria o servidor HTTP nativo de medição para hospedagem self-hosted em ISPs.
  *
@@ -58,7 +120,11 @@ function sendJson(res, statusCode, payload, commonHeaders, extraHeaders = {}) {
  *   serverLabel?: string,
  *   allowedOrigin?: string,
  *   maxDownloadBytes?: number,
- *   maxUploadBytes?: number
+ *   maxUploadBytes?: number,
+ *   lookingGlassRateLimit?: number,
+ *   lookingGlassWindowMs?: number,
+ *   lookingGlassLookup?: (host: string, opts: any) => Promise<any>,
+ *   lookingGlassProbe?: typeof probeTcpLatency
  * }} [options]
  */
 export function createMeasurementServer(options = {}) {
@@ -88,6 +154,19 @@ export function createMeasurementServer(options = {}) {
     options.maxUploadBytes ?? process.env.MAX_UPLOAD_BYTES,
     DEFAULT_MAX_UPLOAD_BYTES
   );
+
+  const lookingGlassLimiter = createRateLimiter({
+    maxRequests: parsePositiveInt(
+      options.lookingGlassRateLimit ?? process.env.LOOKING_GLASS_RATE_LIMIT,
+      DEFAULT_LOOKING_GLASS_RATE_LIMIT
+    ),
+    windowMs: parsePositiveInt(options.lookingGlassWindowMs, DEFAULT_LOOKING_GLASS_WINDOW_MS)
+  });
+  const lookingGlassLookup = options.lookingGlassLookup;
+  const lookingGlassProbe =
+    typeof options.lookingGlassProbe === 'function'
+      ? options.lookingGlassProbe
+      : probeTcpLatency;
 
   const commonHeaders = {
     'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -242,6 +321,66 @@ export function createMeasurementServer(options = {}) {
     if (pathname === '/api/meta' && method === 'GET') {
       const clientIp = resolveClientIp(req);
       sendJson(res, 200, { ispName, serverLabel, clientIp }, commonHeaders);
+      return;
+    }
+
+    if (pathname === '/api/looking-glass/presets' && method === 'GET') {
+      sendJson(res, 200, { ok: true, presets: LOOKING_GLASS_PRESETS }, commonHeaders);
+      return;
+    }
+
+    if (pathname === '/api/looking-glass' && method === 'POST') {
+      const clientIp = resolveClientIp(req);
+      const rateState = lookingGlassLimiter.check(clientIp);
+      if (!rateState.allowed) {
+        sendJson(
+          res,
+          429,
+          {
+            ok: false,
+            error: 'Limite de consultas Looking Glass atingido. Tente novamente em instantes.',
+            retryAfterSec: rateState.retryAfterSec
+          },
+          commonHeaders,
+          { 'Retry-After': String(rateState.retryAfterSec) }
+        );
+        return;
+      }
+
+      readJsonBody(req, DEFAULT_LOOKING_GLASS_BODY_BYTES)
+        .then(async (payload) => {
+          const resolved = await resolveSafeTarget(payload, {
+            lookupImpl: lookingGlassLookup
+          });
+          const probeResult = await lookingGlassProbe(resolved.resolvedIp, resolved.port, {
+            count: 4,
+            timeoutMs: 2000,
+            target: resolved.target
+          });
+          if (!res.writableEnded) {
+            sendJson(res, 200, { ok: true, ...probeResult }, commonHeaders);
+          }
+        })
+        .catch((err) => {
+          if (res.writableEnded) return;
+          if (err instanceof LookingGlassError) {
+            const extraHeaders = err.statusCode === 413 ? { Connection: 'close' } : {};
+            sendJson(
+              res,
+              err.statusCode,
+              { ok: false, error: err.message, code: err.code },
+              commonHeaders,
+              extraHeaders
+            );
+            return;
+          }
+          sendJson(
+            res,
+            500,
+            { ok: false, error: 'Erro interno ao executar sonda Looking Glass.' },
+            commonHeaders
+          );
+        });
       return;
     }
 
