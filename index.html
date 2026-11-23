@@ -3,11 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0B0F19" />
     <meta
       name="description"
       content="TestAi — Teste de velocidade inteligente com diagnóstico prático de uso, análise de latência sob carga e compatibilidade de dispositivos."
     />
     <title>TestAi — Diagnóstico Inteligente de Internet</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="./icons/icon-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -59,6 +63,9 @@
             </span>
             <span class="pill hidden" id="ispNamePill"></span>
             <span class="pill mono adv-only" id="serverInfo">Cloudflare Edge</span>
+            <button type="button" class="btn-secondary hidden" id="installAppBtn">
+              Instalar App
+            </button>
           </div>
         </div>
       </header>

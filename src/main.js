@@ -5,6 +5,7 @@
  */
 
 import { SpeedTestService } from './services/speedtest.service.js';
+import { registerServiceWorker, setupInstallPrompt } from './services/pwa.js';
 import {
   DEFAULT_RUNTIME_CONFIG,
   loadRuntimeConfig,
@@ -791,6 +792,8 @@ function initApp() {
   setupTabs();
   updateOnlineIndicator();
   devicePanel.renderBrandCards();
+  setupInstallPrompt();
+  registerServiceWorker();
 
   loadRuntimeConfig()
     .then((config) => {
