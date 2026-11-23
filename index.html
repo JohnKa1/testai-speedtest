@@ -56,16 +56,13 @@
             </button>
           </div>
 
-          <div class="status-pills">
-            <span class="pill" id="networkStatusPill">
+          <div class="status-pills" aria-label="Status da conexão">
+            <span class="pill status-indicator" id="networkStatusPill">
               <span class="status-dot online" id="networkDot"></span>
               <span id="networkStatusText">Online</span>
             </span>
             <span class="pill hidden" id="ispNamePill"></span>
             <span class="pill mono adv-only" id="serverInfo">Cloudflare Edge</span>
-            <button type="button" class="btn-secondary hidden" id="installAppBtn">
-              Instalar App
-            </button>
           </div>
         </div>
       </header>
@@ -909,6 +906,13 @@
           </div>
         </details>
       </main>
+
+      <footer class="app-footer" aria-label="Rodapé do TestAi">
+        <p class="footer-note">TestAi — Diagnóstico local no navegador, sem rastreamento.</p>
+        <button type="button" class="btn-secondary hidden" id="installAppBtn">
+          Instalar App
+        </button>
+      </footer>
     </div>
 
     <script type="module" src="./src/main.js"></script>

@@ -123,10 +123,10 @@ input[type='checkbox'] {
 }
 
 .btn-hero {
-  min-width: min(100%, 260px);
-  min-height: 52px;
-  font-size: 1.05rem;
-  border-radius: var(--r-pill);
+  min-width: min(100%, 240px);
+  min-height: 48px;
+  font-size: 1rem;
+  border-radius: var(--r-item);
 }
 
 .btn-secondary {
@@ -172,23 +172,42 @@ input[type='checkbox'] {
 
 .btn-link-toggle {
   min-height: 44px;
-  background: transparent;
-  border: none;
-  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-item);
+  color: var(--info);
   font-family: var(--font);
-  font-size: 0.875rem;
+  font-size: var(--fs-label);
   font-weight: 600;
   cursor: pointer;
-  padding: var(--sp-2) 0;
+  padding: var(--sp-2) var(--sp-4);
   margin-bottom: var(--sp-3);
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-1);
+  justify-content: center;
+  gap: var(--sp-2);
+  touch-action: manipulation;
+  transition:
+    background-color var(--dur-fast) var(--ease-noc),
+    border-color var(--dur-fast) var(--ease-noc),
+    color var(--dur-fast) var(--ease-noc);
+}
+
+.btn-link-toggle::after {
+  content: '→';
+  font-weight: 700;
+  transition: transform var(--dur-fast) var(--ease-noc);
 }
 
 .btn-link-toggle:hover {
+  background: var(--info-bg);
+  border-color: var(--info);
   color: var(--text-1);
-  text-decoration: underline;
+  text-decoration: none;
+}
+
+.btn-link-toggle:hover::after {
+  transform: translateX(2px);
 }
 
 .btn-danger-outline {

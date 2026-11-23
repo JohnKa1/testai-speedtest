@@ -121,6 +121,10 @@ body[data-ui-mode='advanced'] .app-shell {
   border-bottom: 1px solid var(--line);
 }
 
+.brand-block {
+  min-width: 0;
+}
+
 .brand-title-row {
   display: flex;
   align-items: center;
@@ -153,7 +157,7 @@ body[data-ui-mode='advanced'] .app-shell {
 
 .brand-subtitle {
   color: var(--text-2);
-  font-size: var(--fs-body);
+  font-size: var(--fs-label);
   margin-top: var(--sp-1);
 }
 
@@ -163,6 +167,7 @@ body[data-ui-mode='advanced'] .app-shell {
   justify-content: space-between;
   gap: var(--sp-3);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .mode-switcher {
@@ -171,6 +176,7 @@ body[data-ui-mode='advanced'] .app-shell {
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   padding: var(--sp-1);
+  flex-shrink: 0;
 }
 
 .mode-btn {
@@ -201,6 +207,7 @@ body[data-ui-mode='advanced'] .app-shell {
   align-items: center;
   gap: var(--sp-2);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .pill {
@@ -211,6 +218,32 @@ body[data-ui-mode='advanced'] .app-shell {
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   padding: var(--sp-1) var(--sp-3);
+  min-height: 34px;
+  font-size: var(--fs-label);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.status-indicator {
+  background: transparent;
+  border-color: transparent;
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.app-footer {
+  margin-top: auto;
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.footer-note {
   font-size: var(--fs-label);
   color: var(--text-2);
 }

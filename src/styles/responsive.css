@@ -24,10 +24,17 @@
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
+    gap: var(--sp-4);
   }
 
   .topbar-right {
     justify-content: flex-end;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+
+  .status-pills {
+    flex-wrap: nowrap;
   }
 
   .control-bar {
@@ -110,11 +117,15 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .gaming-pillars-grid {
+  .gaming-pillars-grid,
+  .gaming-genres-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .gaming-genres-grid,
+  .gaming-genre:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
   .tech-meta-grid,
   .device-tiers-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -124,11 +135,121 @@
 @media (min-width: 1025px) {
   .telemetry-grid {
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-    align-items: stretch;
+    align-items: start;
   }
 
   .gaming-pillars-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .app-shell {
+    padding: var(--sp-3);
+    gap: var(--sp-4);
+  }
+
+  .topbar {
+    gap: var(--sp-3);
+    padding-bottom: var(--sp-3);
+  }
+
+  .brand-title-row {
+    justify-content: space-between;
+    gap: var(--sp-2);
+  }
+
+  .topbar-right {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-2);
+  }
+
+  .mode-switcher {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mode-btn {
+    width: 100%;
+    padding: var(--sp-2) var(--sp-3);
+  }
+
+  .status-pills {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .simple-hero-card {
+    padding: var(--sp-4) var(--sp-3);
+  }
+
+  .simple-cta-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-2);
+  }
+
+  .simple-cta-row .btn-primary {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .simple-cta-row .btn-secondary {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    padding: var(--sp-2) var(--sp-3);
+  }
+
+  .simple-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-2);
+  }
+
+  .usage-verdict-grid,
+  .gaming-pillars-grid,
+  .gaming-genres-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .diag-actions,
+  .recent-history-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .diag-actions button,
+  .recent-history-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .disclosure-summary,
+  .disclosure-body {
+    padding: var(--sp-3);
+  }
+
+  .app-footer {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .app-footer .btn-secondary {
+    width: 100%;
+  }
+
+  body.is-embed .app-shell {
+    padding: var(--sp-2);
+  }
+
+  body.is-embed .simple-hero-card {
+    padding: var(--sp-3);
   }
 }
 
