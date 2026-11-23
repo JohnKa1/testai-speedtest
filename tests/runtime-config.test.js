@@ -25,7 +25,7 @@ describe('TestAi — Configuração White-Label em Tempo de Execução (Etapa 1)
 
     assert.equal(parsed.ispName, 'TestAi');
     assert.equal(parsed.serverLabel, 'Cloudflare Edge');
-    assert.equal(parsed.measurementMode, 'sustained');
+    assert.equal(parsed.measurementMode, 'commercial');
     assert.deepEqual(parsed.parallelStreams, { download: 6, upload: 4 });
     assert.deepEqual(parsed.endpoints, {
       down: 'https://speed.cloudflare.com/__down',

@@ -248,6 +248,47 @@ function getResourceTtfbMs(url) {
   return null;
 }
 
+export const SAFE_MAX_DOWNLOAD_CHUNK_BYTES = 50_000_000;
+
+/**
+ * Calcula dinamicamente o tamanho ideal de bloco HTTP para download conforme a vazão
+ * medida, mantendo blocos reduzidos em conexões lentas/móveis e escalando até 25–50 MB
+ * em links de fibra rápidos, sem ultrapassar o teto seguro do servidor.
+ *
+ * @param {number} mbps
+ * @param {number} [currentChunkBytes]
+ * @param {number} [maxDownloadBytes]
+ * @returns {number}
+ */
+export function computeAdaptiveDownloadChunkBytes(
+  mbps,
+  currentChunkBytes = 2_000_000,
+  maxDownloadBytes = 25_000_000
+) {
+  const effectiveMax = Math.min(
+    SAFE_MAX_DOWNLOAD_CHUNK_BYTES,
+    Math.max(500_000, Number(maxDownloadBytes) || 25_000_000)
+  );
+  const safeCurrent = Math.max(500_000, Number(currentChunkBytes) || 2_000_000);
+
+  if (!isNonNegativeNumber(mbps)) {
+    return Math.min(effectiveMax, safeCurrent);
+  }
+  if (mbps < 20) {
+    return Math.min(effectiveMax, 1_000_000);
+  }
+  if (mbps < 50) {
+    return Math.min(effectiveMax, 2_000_000);
+  }
+  if (mbps <= 100) {
+    return Math.min(effectiveMax, Math.max(safeCurrent, 5_000_000));
+  }
+  if (mbps <= 300) {
+    return Math.min(effectiveMax, Math.max(safeCurrent, 25_000_000));
+  }
+  return Math.min(effectiveMax, Math.max(safeCurrent, SAFE_MAX_DOWNLOAD_CHUNK_BYTES));
+}
+
 function clampParallelStreams(value, fallback) {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return fallback;
@@ -258,7 +299,7 @@ export function createRunAccumulator(options = {}) {
   const measurementMode = options.measurementMode === 'commercial' ? 'commercial' : 'sustained';
   const latencyPerc = options.latencyPercentile ?? 0.5;
   const bandwidthPerc = measurementMode === 'commercial' ? 0.9 : (options.bandwidthPercentile ?? 0.5);
-  const rampDiscardMs = measurementMode === 'commercial' ? 0 : (options.rampDiscardMs ?? 1000);
+  const rampDiscardMs = options.rampDiscardMs ?? 1000;
 
   const state = {
     downloadPoints: [],
@@ -273,14 +314,14 @@ export function createRunAccumulator(options = {}) {
     rateLimitDownshifts: 0
   };
 
-  const getFilteredDownload = () =>
-    measurementMode === 'commercial'
-      ? selectSteadyStatePoints(state.downloadPoints, 0, 1)
-      : selectSteadyStatePoints(state.downloadPoints, rampDiscardMs, 4);
-  const getFilteredUpload = () =>
-    measurementMode === 'commercial'
-      ? selectSteadyStatePoints(state.uploadPoints, 0, 1)
-      : selectSteadyStatePoints(state.uploadPoints, rampDiscardMs, 4);
+  const getSteadyDownload = () =>
+    selectSteadyStatePoints(state.downloadPoints, rampDiscardMs, 4);
+  const getSteadyUpload = () =>
+    selectSteadyStatePoints(state.uploadPoints, rampDiscardMs, 4);
+  const getAllValidDownload = () =>
+    selectSteadyStatePoints(state.downloadPoints, 0, 1);
+  const getAllValidUpload = () =>
+    selectSteadyStatePoints(state.uploadPoints, 0, 1);
 
   const calcLat = (arr) => (arr.length > 0 ? computePercentile(arr, latencyPerc) : undefined);
   const calcBwPercentile = (pts, perc) => {
@@ -298,15 +339,17 @@ export function createRunAccumulator(options = {}) {
 
   return {
     state,
-    getDownloadBandwidthPoints: () => getFilteredDownload(),
-    getUploadBandwidthPoints: () => getFilteredUpload(),
+    getDownloadBandwidthPoints: () =>
+      measurementMode === 'commercial' ? getAllValidDownload() : getSteadyDownload(),
+    getUploadBandwidthPoints: () =>
+      measurementMode === 'commercial' ? getAllValidUpload() : getSteadyUpload(),
     getUnloadedLatencyPoints: () => state.unloadedLatencies.slice(),
     getDownLoadedLatencyPoints: () => state.downloadLoadedLatencies.slice(),
     getUpLoadedLatencyPoints: () => state.uploadLoadedLatencies.slice(),
-    getDownloadBandwidth: () => calcBwPrimary(getFilteredDownload()),
-    getUploadBandwidth: () => calcBwPrimary(getFilteredUpload()),
-    getSustainedDownloadBandwidth: () => calcBwPercentile(getFilteredDownload(), 0.5),
-    getSustainedUploadBandwidth: () => calcBwPercentile(getFilteredUpload(), 0.5),
+    getDownloadBandwidth: () => calcBwPrimary(getSteadyDownload()),
+    getUploadBandwidth: () => calcBwPrimary(getSteadyUpload()),
+    getSustainedDownloadBandwidth: () => calcBwPercentile(getSteadyDownload(), 0.5),
+    getSustainedUploadBandwidth: () => calcBwPercentile(getSteadyUpload(), 0.5),
     getUnloadedLatency: () => calcLat(state.unloadedLatencies),
     getUnloadedJitter: () => {
       const jit = computeJitterMs(state.unloadedLatencies);
@@ -328,10 +371,10 @@ export function createRunAccumulator(options = {}) {
       engine: 'testai-multistream',
       measurementMode,
       latency: calcLat(state.unloadedLatencies),
-      download: calcBwPrimary(getFilteredDownload()),
-      upload: calcBwPrimary(getFilteredUpload()),
-      sustainedDownload: calcBwPercentile(getFilteredDownload(), 0.5),
-      sustainedUpload: calcBwPercentile(getFilteredUpload(), 0.5),
+      download: calcBwPrimary(getSteadyDownload()),
+      upload: calcBwPrimary(getSteadyUpload()),
+      sustainedDownload: calcBwPercentile(getSteadyDownload(), 0.5),
+      sustainedUpload: calcBwPercentile(getSteadyUpload(), 0.5),
       downLoadedLatency: calcLat(state.downloadLoadedLatencies),
       upLoadedLatency: calcLat(state.uploadLoadedLatencies),
       downloadStallsRecovered: state.downloadStallsRecovered,
@@ -422,7 +465,7 @@ export class SpeedTestService {
         uploadConcurrency: isCommercial
           ? clampParallelStreams(cfg.parallelStreams?.upload, baseOpts.uploadConcurrency)
           : baseOpts.uploadConcurrency,
-        rampDiscardMs: isCommercial ? 0 : baseOpts.rampDiscardMs,
+        rampDiscardMs: baseOpts.rampDiscardMs,
         bandwidthPercentile: isCommercial ? 0.9 : baseOpts.bandwidthPercentile,
         downloadApiUrl: cfg.endpoints.down,
         uploadApiUrl: cfg.endpoints.up,
@@ -805,12 +848,11 @@ export class SpeedTestService {
           measTime: Math.round(relMs)
         });
         if (accumulator.state.rateLimitDownshifts === 0) {
-          const maxCap = opts.maxDownloadBytes || 5_000_000;
-          if (sample.mbps > 350 && currentChunkBytes < maxCap) {
-            currentChunkBytes = Math.min(maxCap, 10_000_000);
-          } else if (sample.mbps > 60 && currentChunkBytes < Math.min(maxCap, 5_000_000)) {
-            currentChunkBytes = Math.min(maxCap, 5_000_000);
-          }
+          currentChunkBytes = computeAdaptiveDownloadChunkBytes(
+            sample.mbps,
+            currentChunkBytes,
+            opts.maxDownloadBytes
+          );
         }
       }
 

@@ -14,7 +14,13 @@ import {
   mergeRuntimeConfig,
   setRuntimeConfig
 } from '../src/services/runtime-config.js';
-import { createRunAccumulator, SpeedTestService } from '../src/services/speedtest.service.js';
+import {
+  computeAdaptiveDownloadChunkBytes,
+  createRunAccumulator,
+  SAFE_MAX_DOWNLOAD_CHUNK_BYTES,
+  selectSteadyStatePoints,
+  SpeedTestService
+} from '../src/services/speedtest.service.js';
 import { renderTechnicalPanel } from '../src/ui/diagnostics-view.js';
 import {
   computeP50Mbps,
@@ -42,31 +48,34 @@ function abortableDelay(ms, signal) {
 }
 
 describe('TestAi — Motor Comercial: NAT Boost / P90 e Multi-stream (Etapa 2)', () => {
-  it('calcula P90 vs P50 corretamente em cenário com burst inicial (NAT Boost)', () => {
-    const burstValuesMbps = [900, 880, 850, 500, 480, 460, 450, 440, 430, 420];
-    const points = burstValuesMbps.map((mbps, idx) => ({
+  it('calcula P90 comercial descartando ramp-up inicial (< 1s) e preservando série completa para gráficos', () => {
+    const slowStartPlusSteadyMbps = [80, 140, 220, 310, 900, 880, 850, 500, 480, 460];
+    const points = slowStartPlusSteadyMbps.map((mbps, idx) => ({
       bps: mbps * 1_000_000,
       mbps,
       elapsedMs: (idx + 1) * 200
     }));
 
-    const p90 = computeP90Mbps(points);
-    const p50 = computeP50Mbps(points);
-    assert.equal(p90, 882);
-    assert.equal(p50, 470);
-    assert.ok(p90 > p50);
+    const steadyPoints = points.filter((pt) => pt.elapsedMs >= 1000);
+    const p90All = computeP90Mbps(points);
+    const p90Steady = computeP90Mbps(steadyPoints);
+    const p50Steady = computeP50Mbps(steadyPoints);
+    assert.equal(p90All, 882);
+    assert.equal(p90Steady, 890);
+    assert.equal(p50Steady, 675);
+    assert.ok(p90Steady > p90All);
 
-    // No modo comercial, amostras iniciais de burst (< 1000 ms) são preservadas e retorna P90
+    // No modo comercial: descarta ramp-up (< 1000 ms) para P90/P50, mas preserva todas as 10 amostras na série
     const commAcc = createRunAccumulator({ measurementMode: 'commercial', rampDiscardMs: 1000 });
     commAcc.state.downloadPoints.push(...points);
     commAcc.state.uploadPoints.push(...points);
 
     assert.equal(commAcc.getDownloadBandwidthPoints().length, 10);
-    assert.equal(Math.round(commAcc.getDownloadBandwidth() / 1_000_000), 882);
-    assert.equal(Math.round(commAcc.getSustainedDownloadBandwidth() / 1_000_000), 470);
+    assert.equal(Math.round(commAcc.getDownloadBandwidth() / 1_000_000), 890);
+    assert.equal(Math.round(commAcc.getSustainedDownloadBandwidth() / 1_000_000), 675);
     assert.equal(commAcc.getSummary().measurementMode, 'commercial');
 
-    // No modo sustentado, descarta ramp-up (< 1000 ms), preserva média no retorno padrão e P50 em sustentado
+    // No modo sustentado: também descarta ramp-up (< 1000 ms) e usa média sustentada
     const sustAcc = createRunAccumulator({
       measurementMode: 'sustained',
       rampDiscardMs: 1000,
@@ -74,7 +83,7 @@ describe('TestAi — Motor Comercial: NAT Boost / P90 e Multi-stream (Etapa 2)',
     });
     sustAcc.state.downloadPoints.push(...points);
     assert.equal(sustAcc.getDownloadBandwidthPoints().length, 6);
-    assert.equal(Math.round(sustAcc.getSustainedDownloadBandwidth() / 1_000_000), 445);
+    assert.equal(Math.round(sustAcc.getSustainedDownloadBandwidth() / 1_000_000), 675);
     assert.ok(sustAcc.getDownloadBandwidth() < commAcc.getDownloadBandwidth());
   });
 
@@ -86,11 +95,11 @@ describe('TestAi — Motor Comercial: NAT Boost / P90 e Multi-stream (Etapa 2)',
       idlePingCount: 5,
       maxIdleLatencyMs: 250,
       pingTimeoutMs: 120,
-      downloadDurationMs: 640,
-      uploadDurationMs: 640,
+      downloadDurationMs: 760,
+      uploadDurationMs: 760,
       sampleIntervalMs: 40,
-      rollingWindowMs: 220,
-      rampDiscardMs: 220,
+      rollingWindowMs: 200,
+      rampDiscardMs: 120,
       downloadConcurrency: 2,
       uploadConcurrency: 2
     };
@@ -131,15 +140,17 @@ describe('TestAi — Motor Comercial: NAT Boost / P90 e Multi-stream (Etapa 2)',
 
         if (init.method === 'POST') {
           if (ulPhaseStart === null) ulPhaseStart = performance.now();
-          const inBurst = performance.now() - ulPhaseStart < 240;
-          await abortableDelay(inBurst ? 18 : 110, init.signal);
+          const elapsed = performance.now() - ulPhaseStart;
+          const delay = elapsed < 120 ? 55 : elapsed < 380 ? 15 : 115;
+          await abortableDelay(delay, init.signal);
           return { ok: true, status: 200, headers: new Headers(), text: async () => '' };
         }
 
         if (dlPhaseStart === null) dlPhaseStart = performance.now();
-        const inBurst = performance.now() - dlPhaseStart < 240;
-        const size = inBurst ? 320_000 : 20_000;
-        await abortableDelay(inBurst ? 20 : 85, init.signal);
+        const elapsed = performance.now() - dlPhaseStart;
+        const size = elapsed < 120 ? 18_000 : elapsed < 380 ? 320_000 : 20_000;
+        const delay = elapsed < 120 ? 45 : elapsed < 380 ? 16 : 85;
+        await abortableDelay(delay, init.signal);
         return {
           ok: true,
           status: 200,
@@ -161,16 +172,21 @@ describe('TestAi — Motor Comercial: NAT Boost / P90 e Multi-stream (Etapa 2)',
 
       assert.equal(result.measurementMode, 'commercial');
       assert.deepEqual(result.parallelStreams, { download: 3, upload: 2 });
-      assert.ok(result.stats.download && result.stats.download.count >= 4);
-      assert.ok(result.stats.upload && result.stats.upload.count >= 3);
+      assert.ok(result.stats.download && result.stats.download.count >= 6);
+      assert.ok(result.stats.upload && result.stats.upload.count >= 4);
 
-      // Valor principal do motor é P90 e supera a velocidade sustentada (P50) no cenário com burst
-      assert.ok(Math.abs(result.metrics.download.value - result.stats.download.p90) < 1e-6);
+      const steadyDl = selectSteadyStatePoints(result.series.downloadPoints, 120, 4);
+      const steadyUl = selectSteadyStatePoints(result.series.uploadPoints, 120, 4);
+      const expectedDlP90 = computeP90Mbps(steadyDl);
+      const expectedUlP90 = computeP90Mbps(steadyUl);
+
+      // Valor principal do motor usa P90 pós-ramp-up e supera a velocidade sustentada (P50)
+      assert.ok(Math.abs(result.metrics.download.value - expectedDlP90) < 1e-6);
       assert.ok(
         result.metrics.download.value > result.stats.download.p50,
         `Esperado P90 (${result.metrics.download.value}) > P50 (${result.stats.download.p50})`
       );
-      assert.ok(Math.abs(result.metrics.upload.value - result.stats.upload.p90) < 1e-6);
+      assert.ok(Math.abs(result.metrics.upload.value - expectedUlP90) < 1e-6);
 
       // Pico e métricas de latência/jitter/bufferbloat permanecem intactos nos detalhes
       assert.ok(result.stats.download.max >= result.metrics.download.value);
@@ -180,14 +196,14 @@ describe('TestAi — Motor Comercial: NAT Boost / P90 e Multi-stream (Etapa 2)',
       assert.equal(result.metrics.uploadLatency.status, METRIC_STATUS.MEASURED);
       assert.equal(result.metrics.downloadLatencyDelta.status, METRIC_STATUS.MEASURED);
 
-      // resolvePrimaryAndPeakSpeed reflete P90 + sustained (P50)
+      // resolvePrimaryAndPeakSpeed reflete P90 do motor + sustained (P50) + peak
       const resolvedDl = resolvePrimaryAndPeakSpeed(
         result.series.downloadPoints,
         result.metrics.download,
         result.stats.download,
         { measurementMode: 'commercial' }
       );
-      assert.ok(Math.abs(resolvedDl.primary - result.stats.download.p90) < 1e-6);
+      assert.ok(Math.abs(resolvedDl.primary - result.metrics.download.value) < 1e-6);
       assert.ok(Math.abs(resolvedDl.sustained - result.stats.download.p50) < 1e-6);
       assert.ok(Math.abs(resolvedDl.peak - result.stats.download.max) < 1e-6);
 
@@ -240,6 +256,35 @@ describe('TestAi — Motor Comercial: NAT Boost / P90 e Multi-stream (Etapa 2)',
       globalThis.document = prevDocument;
       TEST_PROFILES.light.options = origLightOpts;
       setRuntimeConfig(prevGlobalConfig);
+    }
+  });
+
+  it('escalona tamanho de bloco de download para fibra rápida sem ultrapassar teto seguro', () => {
+    // Link lento mantém blocos leves para não travar 3G/4G
+    assert.equal(computeAdaptiveDownloadChunkBytes(15, 2_000_000, 50_000_000), 1_000_000);
+    assert.equal(computeAdaptiveDownloadChunkBytes(35, 2_000_000, 50_000_000), 2_000_000);
+
+    // Link intermediário escala para 5 MB
+    assert.equal(computeAdaptiveDownloadChunkBytes(80, 2_000_000, 50_000_000), 5_000_000);
+
+    // Fibra rápida (> 100 Mbps) escala para 25 MB respeitando o maxDownloadBytes do perfil
+    assert.equal(computeAdaptiveDownloadChunkBytes(200, 2_000_000, 25_000_000), 25_000_000);
+    assert.equal(computeAdaptiveDownloadChunkBytes(200, 2_000_000, 10_000_000), 10_000_000);
+
+    // Fibra Gigabit (> 300 Mbps) escala até 50 MB sem estourar SAFE_MAX_DOWNLOAD_CHUNK_BYTES (nem teto de 100 MB)
+    assert.equal(computeAdaptiveDownloadChunkBytes(800, 25_000_000, 50_000_000), 50_000_000);
+    assert.equal(
+      computeAdaptiveDownloadChunkBytes(1500, 25_000_000, 200_000_000),
+      SAFE_MAX_DOWNLOAD_CHUNK_BYTES
+    );
+  });
+
+  it('TEST_PROFILES não mantém parâmetros legados sem uso após faxina de configuração', () => {
+    for (const profile of Object.values(TEST_PROFILES)) {
+      assert.equal('description' in profile, false);
+      assert.equal('estimatedDataLabel' in profile, false);
+      assert.equal('autoStart' in profile.options, false);
+      assert.ok(profile.options.maxDownloadBytes <= SAFE_MAX_DOWNLOAD_CHUNK_BYTES);
     }
   });
 

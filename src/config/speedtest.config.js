@@ -5,7 +5,6 @@
 import { DEFAULT_RUNTIME_CONFIG } from '../services/runtime-config.js';
 
 const COMMON_ENGINE_OPTIONS = Object.freeze({
-  autoStart: false,
   downloadApiUrl: DEFAULT_RUNTIME_CONFIG.endpoints.down,
   uploadApiUrl: DEFAULT_RUNTIME_CONFIG.endpoints.up,
   pingApiUrl: DEFAULT_RUNTIME_CONFIG.endpoints.ping,
@@ -25,8 +24,6 @@ export const TEST_PROFILES = {
   light: {
     id: 'light',
     label: 'Econômico / Móvel (4G/5G)',
-    description: 'Ciclo rápido multi-fluxo (~4,5s por fase) ideal para redes móveis ou triagem rápida.',
-    estimatedDataLabel: '~35–140 MB',
     timeoutMs: 45_000,
     inactivityTimeoutMs: 15_000,
     options: {
@@ -39,7 +36,7 @@ export const TEST_PROFILES = {
       downloadConcurrency: 3,
       uploadConcurrency: 3,
       initialDownloadBytes: 1_000_000,
-      maxDownloadBytes: 2_000_000,
+      maxDownloadBytes: 10_000_000,
       initialUploadBytes: 131_072,
       maxUploadBytes: 2_000_000
     }
@@ -48,8 +45,6 @@ export const TEST_PROFILES = {
   standard: {
     id: 'standard',
     label: 'Padrão Adaptativo (100 Mbps – 1 Gbps)',
-    description: 'Fluxos paralelos contínuos com adaptação de bloco e recuperação instantânea de stalls (~6,5s por fase).',
-    estimatedDataLabel: '~120–450 MB',
     timeoutMs: 55_000,
     inactivityTimeoutMs: 18_000,
     options: {
@@ -62,7 +57,7 @@ export const TEST_PROFILES = {
       downloadConcurrency: 4,
       uploadConcurrency: 4,
       initialDownloadBytes: 2_000_000,
-      maxDownloadBytes: 5_000_000,
+      maxDownloadBytes: 25_000_000,
       initialUploadBytes: 262_144,
       maxUploadBytes: 4_000_000
     }
@@ -71,8 +66,6 @@ export const TEST_PROFILES = {
   multigig: {
     id: 'multigig',
     label: 'Alta Capacidade (1 Gbps – 2,5 Gbps+)',
-    description: 'Até 6 fluxos paralelos contínuos para saturação completa de links Gigabit e Multi-Gigabit.',
-    estimatedDataLabel: '~350–950 MB',
     timeoutMs: 70_000,
     inactivityTimeoutMs: 20_000,
     options: {
@@ -85,7 +78,7 @@ export const TEST_PROFILES = {
       downloadConcurrency: 6,
       uploadConcurrency: 4,
       initialDownloadBytes: 2_000_000,
-      maxDownloadBytes: 10_000_000,
+      maxDownloadBytes: 50_000_000,
       initialUploadBytes: 524_288,
       maxUploadBytes: 5_000_000
     }
@@ -94,8 +87,6 @@ export const TEST_PROFILES = {
   stability: {
     id: 'stability',
     label: 'Estabilidade Prolongada (Bufferbloat)',
-    description: 'Sondagens estendidas de latência ociosa e 9s contínuos sob carga para avaliar bufferbloat e variação temporal.',
-    estimatedDataLabel: '~220–620 MB',
     timeoutMs: 75_000,
     inactivityTimeoutMs: 20_000,
     options: {
@@ -108,7 +99,7 @@ export const TEST_PROFILES = {
       downloadConcurrency: 4,
       uploadConcurrency: 4,
       initialDownloadBytes: 2_000_000,
-      maxDownloadBytes: 5_000_000,
+      maxDownloadBytes: 25_000_000,
       initialUploadBytes: 262_144,
       maxUploadBytes: 4_000_000
     }

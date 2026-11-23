@@ -272,13 +272,14 @@ export function resolvePrimaryAndPeakSpeed(points, metric, statsObj = null, opti
 
   if (options?.measurementMode === 'commercial') {
     const p90FromSeries = computeP90Mbps(points);
-    const p90 = isNonNegativeNumber(p90FromSeries)
-      ? p90FromSeries
-      : isNonNegativeNumber(statsObj?.p90)
-        ? statsObj.p90
-        : isNonNegativeNumber(metric?.value)
-          ? metric.value
-          : null;
+    const p90 =
+      metric?.status === METRIC_STATUS.MEASURED && isNonNegativeNumber(metric?.value)
+        ? metric.value
+        : isNonNegativeNumber(p90FromSeries)
+          ? p90FromSeries
+          : isNonNegativeNumber(statsObj?.p90)
+            ? statsObj.p90
+            : null;
 
     const p50FromSeries = computeP50Mbps(points);
     const sustained = isNonNegativeNumber(p50FromSeries)

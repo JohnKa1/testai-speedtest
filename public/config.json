@@ -1,7 +1,7 @@
 {
   "ispName": "TestAi",
   "serverLabel": "Cloudflare Edge",
-  "measurementMode": "sustained",
+  "measurementMode": "commercial",
   "parallelStreams": {
     "download": 6,
     "upload": 4
