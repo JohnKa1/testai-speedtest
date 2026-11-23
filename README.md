@@ -11,6 +11,19 @@ Aplicação web de diagnóstico de rede e análise comparativa de capacidade Wi-
 
 ---
 
+## Interface (Modo Simples e Modo Avançado)
+
+### Modo Simples — Diagnóstico Direto, Leitura de Velocidade e Consulta de Dispositivo
+![Modo Simples — Diagnóstico direto, leitura de velocidade, cards práticos e consulta progressiva de dispositivo](docs/screenshots/modo-simples.png)
+
+### Modo Avançado / NOC (Parte 1) — Telemetria em Tempo Real e Latência sob Carga
+![Modo Avançado / NOC (Parte 1) — Telemetria detalhada de vazão, ping, jitter e latência sob carga (bufferbloat)](docs/screenshots/modo-avancado-1.png)
+
+### Modo Avançado / NOC (Parte 2) — Diagnóstico Técnico, Histórico e Comparativo de Hardware
+![Modo Avançado / NOC (Parte 2) — Diagnóstico multidimensional, distribuição estatística, histórico local e consulta de dispositivo](docs/screenshots/modo-avancado-2.png)
+
+---
+
 ## 1. Como o Sistema Funciona
 
 ### 1.1 Servidores Utilizados na Medição
