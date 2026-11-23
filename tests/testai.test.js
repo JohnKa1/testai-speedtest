@@ -48,6 +48,12 @@ describe('TestAi — Contratos de Módulos Públicos', () => {
     assert.equal(typeof simpleView.renderCapabilitiesSkeleton, 'function');
     assert.equal(typeof simpleView.renderCapabilitiesGrid, 'function');
     assert.equal(typeof devicePanel.createDevicePanelController, 'function');
+    assert.equal(typeof devicePanel.renderDeviceComparisonPanel, 'function');
+    assert.equal(typeof devicePanel.showDeviceFeedback, 'function');
+    assert.equal(typeof devicePanel.hideDeviceFeedback, 'function');
+    assert.equal(typeof devicePanel.getBrandDisplayLabel, 'function');
+    assert.equal(typeof devicePanel.getBrandPlaceholderExample, 'function');
+    assert.equal(typeof devicePanel.getBrandSearchName, 'function');
     assert.equal(typeof diagnosticsView.renderDiagnosticsAndGaming, 'function');
     assert.equal(typeof diagnosticsView.renderTechnicalPanel, 'function');
     assert.equal(typeof diagnosticsView.resetDiagnosticsAndTechnicalUI, 'function');

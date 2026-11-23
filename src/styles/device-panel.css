@@ -33,51 +33,6 @@
     opacity var(--dur-fast) var(--ease-noc);
 }
 
-.device-step-block.is-locked {
-  opacity: 0.68;
-}
-
-.device-step-header {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-}
-
-.device-step-pill {
-  font-family: var(--mono);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  padding: var(--sp-1) var(--sp-2);
-  border-radius: var(--r-pill);
-  background: var(--info-bg);
-  color: var(--info);
-}
-
-.device-step-title {
-  font-size: var(--fs-body);
-  font-weight: 700;
-  color: var(--text-1);
-  margin: 0;
-}
-
-.device-step-sub {
-  font-size: var(--fs-label);
-  color: var(--text-2);
-  margin-left: auto;
-}
-
-.device-active-brand-badge {
-  font-family: var(--mono);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--r-pill);
-  background: var(--ok-bg);
-  color: var(--ok);
-  margin-left: auto;
-}
-
 .brand-grid,
 .device-brand-grid {
   display: grid;
@@ -202,18 +157,6 @@
 .suggestion-chip-meta {
   font-size: var(--fs-label);
   color: var(--info);
-}
-
-.device-quick-block {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
-.device-quick-label {
-  font-size: var(--fs-label);
-  font-weight: 600;
-  color: var(--text-2);
 }
 
 .device-search-form {

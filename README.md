@@ -69,22 +69,34 @@ Aplicação web de diagnóstico de rede e análise comparativa de capacidade Wi-
 
 ---
 
-### 1.5 Onde Consultamos as Especificações dos Celulares
-O módulo de **Inteligência de Dispositivos** (`src/services/device-specs.service.js`) opera **100% no navegador (sem backend nem chaves de API)** consultando fontes online abertas em **2 camadas com fallback automático** e busca tolerante a digitações compactas/sem espaço (*Postel's law*, ex.: `a10`, `s25fe`, `iphone16`, `motog84`, `e22`, mantendo códigos homologados como `SM-A065M` intactos):
+### 1.5 Fluxo Progressivo "Consulte seu dispositivo" e Fontes de Especificações
+A seção **Consulte seu dispositivo** (`src/ui/device-panel.js` + `src/services/device-specs.service.js`) opera **100% no navegador (sem backend nem chaves de API)** em um fluxo progressivo acessível:
 
-1. **Camada 1 — Wikipedia Online (MediaWiki API EN e PT):**
-   - Consulta `https://en.wikipedia.org/w/api.php` e `https://pt.wikipedia.org/w/api.php`, realizando *parsing* e desembrulhamento recursivo de `Infobox` (`{{...}}`) e normalização de entidades HTML (`&nbsp;`, `&#160;`) para extrair SoC/chipset, RAM, geração/padrões Wi-Fi (`/6`, `/6e`, `/7`) e suporte 4G/5G.
-2. **Camada 2 — Google Play Certified Devices Registry (via jsDelivr CDN):**
-   - Consulta `https://cdn.jsdelivr.net/gh/bsthen/device-models/devices.json` para mapear mais de 30.000 modelos regionais, códigos homologados de fabricante e aparelhos de entrada/legados.
-
-A partir dos dados obtidos, `src/diagnostics/capability-advisor.js` classifica deterministicamente o smartphone (**Básico**, **Médio** ou **Alto Desempenho**), estima a **média real em Mbps por banda Wi-Fi (`2,4 GHz`, `5 GHz` e `6 GHz`)** e separa explicitamente:
-1. Especificação Teórica Documentada
-2. Estimativa em Condições Favoráveis
-3. Velocidade Medida Neste Navegador
+1. **Etapa 1 — Seleção de marca (Grade 4×2 em desktop `>= 720px` e 2×4 em telas menores):**
+   - Implementada com rádios nativos (`<input type="radio" class="brand-radio sr-only">`) associados a `<label class="brand-option">`, com estilo selecionado neutro (`--surface-2`, borda forte e ícone `✓` com `aria-hidden="true"`).
+   - A tradução do rótulo de exibição para `"Outras marcas"` (`brand.id === 'outras'`) ocorre em ponto único da camada de UI (`getBrandDisplayLabel`), mantendo o serviço inalterado.
+   - Navegação por setas do teclado altera a marca e anuncia via região `aria-live="polite"` (`#deviceBrandStatus`) sem roubar o foco; clique ou toque move o foco diretamente para o campo de modelo.
+2. **Etapa 2 — Campo de modelo, sugestões instantâneas e saída para o Google:**
+   - O passo 2 (`#deviceModelStep`) permanece oculto (`.hidden`) até que uma marca seja escolhida e recebe um placeholder com exemplo da marca que resolve offline (`getBrandPlaceholderExample`).
+   - A cada tecla digitada, exibe sugestões instantâneas da marca (janela 2015–2026) que podem ser fechadas com `Escape` preservando a marca e o texto digitado, e atualiza o link externo `"Seu dispositivo não aparece? Pesquisar no Google"` (`#deviceGoogleLink`, montado pela função pura `buildGoogleSearchUrl` em `src/utils/google-search.js` usando `getBrandSearchName(brand.id)`).
+   - Diferencia os estados de retorno: `not-found` (*"Não encontramos “{texto}” nas fontes consultadas."* + link do Google destacado), `error` de rede (*"Não foi possível consultar agora."* + link do Google destacado) e `empty` (sem link ativo).
+3. **Fontes de especificações e tolerância de busca (*Postel's law*):**
+   - Resolve entradas compactas/sem espaço (ex.: `a10`, `s25fe`, `iphone16`, `motog84`, `e22`, preservando códigos homologados como `SM-A065M`) primeiro no catálogo determinístico local e, quando ausente localmente, consulta duas camadas públicas abertas:
+     - **Camada 1 — Wikipedia Online (MediaWiki API EN e PT):** `https://en.wikipedia.org/w/api.php` e `https://pt.wikipedia.org/w/api.php` (*parsing* de `Infobox` e normalização de entidades HTML).
+     - **Camada 2 — Google Play Certified Devices Registry (via jsDelivr CDN):** `https://cdn.jsdelivr.net/gh/bsthen/device-models/devices.json` / `supported_devices.csv` (30.000+ modelos regionais e códigos homologados).
+4. **Rotulagem honesta dos dados (`src/diagnostics/capability-advisor.js`):**
+   - Classifica deterministicamente o aparelho (**Básico**, **Médio** ou **Alto Desempenho**), estima a **média real em Mbps por banda Wi-Fi (`2,4 GHz`, `5 GHz` e `6 GHz`)** e distingue explicitamente:
+     1. **Especificação Teórica Documentada** (padrão Wi-Fi/rádio do aparelho)
+     2. **Estimativa em Condições Favoráveis** (faixa prática determinística por banda/categoria)
+     3. **Velocidade Medida Neste Navegador** (resultado real do teste executado)
 
 ---
 
-### 1.6 Privacidade, Armazenamento Local e Segurança
+### 1.6 Privacidade, Comportamento de Rede e Segurança
+- **Transparência de rede na consulta de dispositivos:**
+  - **Durante a digitação:** o filtro de sugestões coerentes e a montagem do link de busca ocorrem **100% localmente** no navegador (nenhuma requisição de rede é disparada a cada tecla).
+  - **Ao submeter a consulta ("Consultar" ou clique em sugestão):** se o modelo já constar no catálogo determinístico local, a resolução é 100% offline; caso contrário, o navegador consulta as APIs públicas da Wikipedia (`pt.wikipedia.org`, `en.wikipedia.org`) e, se necessário, o catálogo no jsDelivr (`cdn.jsdelivr.net`).
+  - **Link externo para o Google (`#deviceGoogleLink`):** é um elemento `<a target="_blank" rel="noopener noreferrer">` estático, sem uso da Clipboard API e sem caixas de permissão; nenhuma informação é enviada ao Google a menos que o usuário clique voluntariamente no link.
 - **Histórico 100% local:** as medições ficam salvas apenas no `localStorage` do navegador (`chave testai_history_v2`, máximo de `100` registros), com comparação lado a lado e exportação em `.json`, `.csv` e laudo técnico `.txt`. Nenhum banco externo armazena resultados do usuário.
 - **Aplicação 100% estática e segura:** toda inserção de texto no DOM usa `textContent` (prevenção contra XSS), não há segredos/chaves de API nem backend serverless, e o [vercel.json](./vercel.json) aplica cabeçalhos HTTP de endurecimento (`Content-Security-Policy`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` e `Permissions-Policy`).
 

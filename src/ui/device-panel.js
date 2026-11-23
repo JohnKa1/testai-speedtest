@@ -401,18 +401,7 @@ export function createDevicePanelController({ deviceService, state }) {
     // Revela Passo 2 removendo .hidden (E4, E11)
     const step2 = document.getElementById('deviceModelStep');
     if (step2) {
-      step2.classList.remove('hidden', 'is-locked');
-    }
-
-    const activeBadge = document.getElementById('deviceActiveBrandBadge');
-    if (activeBadge) {
-      activeBadge.textContent = displayLabel;
-      activeBadge.classList.remove('hidden');
-    }
-
-    const step2Title = document.getElementById('deviceStep2Title');
-    if (step2Title) {
-      step2Title.textContent = `Digite o modelo ${displayLabel}`;
+      step2.classList.remove('hidden');
     }
 
     const labelEl = document.getElementById('deviceQueryLabel');
@@ -640,43 +629,8 @@ export function createDevicePanelController({ deviceService, state }) {
     );
   }
 
-  function renderPopularDeviceChips() {
-    renderBrandCards();
-
-    const container = document.getElementById('deviceQuickChips');
-    if (!container) return;
-
-    clearElement(container);
-    const models = deviceService.getPopularModels();
-    models.forEach((dev) => {
-      const label = `${dev.manufacturer} ${dev.model}`;
-      const btn = createEl('button', 'chip-btn', label);
-      btn.type = 'button';
-      btn.addEventListener('click', () => {
-        container.querySelectorAll('.chip-btn.is-active').forEach((el) => {
-          el.classList.remove('is-active');
-        });
-        btn.classList.add('is-active');
-
-        const inferredBrand = inferBrandIdFromText(label);
-        if (inferredBrand) {
-          selectBrand(inferredBrand, { focusInput: false, preserveInput: true });
-        }
-
-        const input = /** @type {HTMLInputElement | null} */ (
-          document.getElementById('deviceQueryInput')
-        );
-        if (input) input.value = dev.model;
-        renderLiveSuggestions(dev.model);
-        handleDeviceLookup(dev.model, { brandId: inferredBrand });
-      });
-      container.appendChild(btn);
-    });
-  }
-
   return {
     handleDeviceLookup,
-    renderPopularDeviceChips,
     renderBrandCards,
     selectBrand
   };

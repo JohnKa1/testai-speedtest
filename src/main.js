@@ -750,7 +750,7 @@ function initApp() {
   setUiMode('simple');
   setupTabs();
   updateOnlineIndicator();
-  devicePanel.renderPopularDeviceChips();
+  devicePanel.renderBrandCards();
 
   try {
     state.history = loadHistory();
