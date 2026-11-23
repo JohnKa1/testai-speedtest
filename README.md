@@ -1,5 +1,12 @@
 # TestAi — Diagnóstico Inteligente de Conexão e Hardware
 
+> **Produção (Live Demo):** [https://testai-speedtest.vercel.app](https://testai-speedtest.vercel.app)
+
+![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-10B981)
+![Stack](https://img.shields.io/badge/stack-Vanilla%20JS%20%2B%20Vite%207-60A5FA)
+![Dependências de Runtime](https://img.shields.io/badge/runtime%20deps-0-10B981)
+![Testes Automatizados](https://img.shields.io/badge/testes-42%20passando%20(node%3Atest)-60A5FA)
+
 Aplicação web de diagnóstico de rede e análise comparativa de capacidade Wi-Fi/hardware de dispositivos. Projetada para entregar medições contínuas e resilientes para o usuário final (**Modo Simples**) e telemetria detalhada para análise técnica (**Modo Avançado / NOC**).
 
 ---

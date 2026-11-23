@@ -19,7 +19,7 @@
 | Parâmetro | Registro Real |
 | :--- | :--- |
 | **Sistema / Navegador** | Windows 10/11 x64 — Chrome 152.0.0.0 (`prefers-reduced-motion: false`) |
-| **Conexão** | [preencher: Cabo / Wi-Fi] |
+| **Conexão** | Cabo Ethernet |
 | **Perfil do TestAi** | Padrão Adaptativo (100 Mbps – 1 Gbps) |
 | **Data/Hora (UTC)** | `2026-11-23T01:20:36Z` a `2026-11-23T01:26:17Z` |
 | **Amostra coletada** | 2 trincas intercaladas (6 rodadas reais: `A, B, C, A, B, C`; $n = 2$ por condição, exceto Lat. UL na Condição A com $n = 1$ pois a Rodada 4 retornou `uploadLatencyMs: null`) |
@@ -85,5 +85,5 @@
 
 ## 6. Conclusão Técnica
 1. **Estabilidade de latência sob carga (~`6,93` a `8,00 ms`)**: A latência sob download (`P50` de `7,68 ms` em **A**, `7,57 ms` em **B** e `7,79 ms` em **C**) e a latência sob upload (`8,00 ms` em **A**, `6,93 ms` em **B** e `7,30 ms` em **C**) permaneceram na mesma faixa estreita nos três cenários, sem qualquer evidência de degradação ou inflação de RTT causada pela camada `.bg-layer` ou pelo `backdrop-filter` (`.glass`).
-2. **Oscilações de vazão explicadas pela rede externa**: As variações amplas de vazão — especialmente no upload, que oscilou entre `8,63 Mbps` e `180,50 Mbps` inclusive dentro da própria linha de base sem fundo (**A**: `10,24` vs. `179,30 Mbps`, $\Delta_A = 169,06\text{ Mbps}$) e em **C** (`8,63` vs. `173,20 Mbps`, $\Delta_C = 164,57\text{ Mbps}$), enquanto **B** (com animação ativa) registrou `180,50` e `127,74 Mbps` — refletem flutuações momentâneas do enlace/rede externa e não custo de composição visual.
+2. **Oscilações de vazão explicadas pela rede externa**: As variações amplas de vazão — especialmente no upload, que oscilou entre `8,63 Mbps` e `180,50 Mbps` inclusive dentro da própria linha de base sem fundo (**A**: `10,24` vs. `179,30 Mbps`, $\Delta_A = 169,06\text{ Mbps}$) e em **C** (`8,63` vs. `173,20 Mbps`, $\Delta_C = 164,57\text{ Mbps}$), enquanto **B** (com animação ativa) registrou `180,50` e `127,74 Mbps` — refletem flutuações momentâneas do enlace/rede externa e não custo de composição visual. O uso de **Cabo Ethernet** na coleta elimina interferências de Wi-Fi local e reforça a origem externa dessa oscilação de upload.
 3. **Salvaguarda preventiva mantida**: A pausa automática da deriva durante a execução do teste (`body.is-measuring .bg-layer { animation-play-state: paused; }`) e quando a aba está em segundo plano (`body.is-page-hidden`), somada ao respeito nativo a `prefers-reduced-motion: reduce`, é mantida como salvaguarda preventiva de custo zero para dispositivos móveis e GPUs integradas mais limitadas.
