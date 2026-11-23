@@ -8,16 +8,199 @@ import {
   renderLatencyComparisonChart,
   renderThroughputChart
 } from '../components/charts.js';
+import { setButtonIconAndLabel } from './icons.js';
 
 export const PHASE_LABELS = Object.freeze({
   idle: 'Aguardando',
   latency: 'Medindo Ping',
   download: 'Testando Download',
   upload: 'Testando Upload',
-  completed: 'Concluído',
+  completed: 'Teste concluído',
   cancelled: 'Cancelado',
   error: 'Falha'
 });
+
+const DEFAULT_GAUGE_SCALE_MAX = 1200;
+
+/**
+ * Resolve o teto dinâmico da escala do velocímetro conforme o plano contratado.
+ *
+ * @param {number | null | undefined} planMbps
+ * @returns {number}
+ */
+export function resolveGaugeScaleMax(planMbps) {
+  if (!isNonNegativeNumber(planMbps) || planMbps <= DEFAULT_GAUGE_SCALE_MAX) {
+    return DEFAULT_GAUGE_SCALE_MAX;
+  }
+  if (planMbps <= 2500) return 2500;
+  if (planMbps <= 5000) return 5000;
+  return 10000;
+}
+
+/**
+ * Formata o rótulo máximo da escala do velocímetro (ex.: "1,2 Gbps").
+ *
+ * @param {number} maxMbps
+ * @returns {string}
+ */
+export function formatGaugeScaleMaxLabel(maxMbps) {
+  if (!isNonNegativeNumber(maxMbps) || maxMbps <= 0) {
+    return '1,2 Gbps';
+  }
+  if (maxMbps >= 1000) {
+    const gbps = maxMbps / 1000;
+    const text = maxMbps % 1000 === 0 ? gbps.toFixed(0) : gbps.toFixed(1).replace('.', ',');
+    return `${text} Gbps`;
+  }
+  return `${Math.round(maxMbps)} Mbps`;
+}
+
+/**
+ * Converte velocidade para percentual no arco usando escala logarítmica suave.
+ * Preserva 100% de compatibilidade com `computeGaugePercent` na escala padrão (1200 Mbps).
+ *
+ * @param {number | null | undefined} mbps
+ * @param {number} [scaleMaxMbps]
+ * @returns {number}
+ */
+export function computeGaugePercentForScale(mbps, scaleMaxMbps = DEFAULT_GAUGE_SCALE_MAX) {
+  if (!isNonNegativeNumber(mbps) || mbps <= 0) {
+    return 0;
+  }
+  if (scaleMaxMbps <= DEFAULT_GAUGE_SCALE_MAX) {
+    return computeGaugePercent(mbps);
+  }
+  const pct = (Math.log10(mbps + 1) / Math.log10(scaleMaxMbps + 1)) * 100;
+  return Math.max(2, Math.min(100, Math.round(pct)));
+}
+
+/**
+ * Separa parte inteira e casa decimal (vírgula PT-BR) para renderização tabular estável.
+ *
+ * @param {string | number | null | undefined} formattedValue
+ */
+export function splitTabularSpeed(formattedValue) {
+  const raw = String(formattedValue ?? '').trim();
+  const decimalMatch = raw.match(/^(-?\d+)[.,](\d+)$/);
+  if (decimalMatch) {
+    return {
+      isNumeric: true,
+      intPart: decimalMatch[1],
+      decPart: `,${decimalMatch[2]}`,
+      text: `${decimalMatch[1]},${decimalMatch[2]}`
+    };
+  }
+  if (/^-?\d+$/.test(raw)) {
+    return {
+      isNumeric: true,
+      intPart: raw,
+      decPart: '',
+      text: raw
+    };
+  }
+  return {
+    isNumeric: false,
+    intPart: raw || '—',
+    decPart: '',
+    text: raw || '—'
+  };
+}
+
+/**
+ * Atualiza o placar principal separando `<span class="speed-int">` e `<span class="speed-dec">`
+ * via DOM API segura (com fallback para textContent em mocks mínimos).
+ *
+ * @param {string | HTMLElement | null} elOrId
+ * @param {string | number | null | undefined} formattedValue
+ */
+export function renderTabularSpeedValue(elOrId, formattedValue) {
+  if (typeof document === 'undefined' && typeof elOrId === 'string') return;
+  const el =
+    typeof elOrId === 'string'
+      ? document.getElementById(elOrId)
+      : elOrId;
+  if (!el) return;
+
+  const parsed = splitTabularSpeed(formattedValue);
+  const canBuildDom =
+    typeof document !== 'undefined' &&
+    typeof document.createElement === 'function' &&
+    typeof el.appendChild === 'function' &&
+    typeof el.removeChild === 'function';
+
+  if (!canBuildDom) {
+    el.textContent = parsed.text;
+    return;
+  }
+
+  while (el.firstChild) {
+    el.removeChild(el.firstChild);
+  }
+  el.textContent = '';
+
+  if (!parsed.isNumeric) {
+    el.textContent = parsed.text;
+    return;
+  }
+
+  const intSpan = document.createElement('span');
+  intSpan.className = 'speed-int';
+  intSpan.textContent = parsed.intPart;
+  el.appendChild(intSpan);
+
+  if (parsed.decPart) {
+    const decSpan = document.createElement('span');
+    decSpan.className = 'speed-dec';
+    decSpan.textContent = parsed.decPart;
+    el.appendChild(decSpan);
+  }
+}
+
+/**
+ * Formata referência clara de atingimento sobre o plano contratado (ex.: "92% do plano contratado (400 Mbps)").
+ *
+ * @param {number | null | undefined} measuredMbps
+ * @param {number | null | undefined} contractedMbps
+ * @returns {string | null}
+ */
+export function formatContractedPlanReference(measuredMbps, contractedMbps) {
+  if (
+    !isNonNegativeNumber(contractedMbps) ||
+    contractedMbps <= 0 ||
+    !isNonNegativeNumber(measuredMbps)
+  ) {
+    return null;
+  }
+  const pct = Math.max(0, Math.round((measuredMbps / contractedMbps) * 100));
+  return `${pct}% do plano contratado (${Math.round(contractedMbps)} Mbps)`;
+}
+
+/**
+ * Atualiza rótulo de teto da escala e marcador visual do plano contratado no arco SVG.
+ *
+ * @param {number | null | undefined} contractedMbps
+ */
+export function updateSimpleGaugePlanMarker(contractedMbps) {
+  if (typeof document === 'undefined') return;
+  const scaleMax = resolveGaugeScaleMax(contractedMbps);
+  setText('simpleGaugeMaxLabel', formatGaugeScaleMaxLabel(scaleMax));
+
+  const marker = document.getElementById('simpleGaugeTargetMarker');
+  if (!marker) return;
+
+  if (!isNonNegativeNumber(contractedMbps) || contractedMbps <= 0) {
+    marker.classList.add('hidden');
+    return;
+  }
+
+  const pct = computeGaugePercentForScale(contractedMbps, scaleMax);
+  const theta = Math.PI * (1 - pct / 100);
+  const cx = 160 + 136 * Math.cos(theta);
+  const cy = 158 - 136 * Math.sin(theta);
+  marker.setAttribute('cx', cx.toFixed(1));
+  marker.setAttribute('cy', cy.toFixed(1));
+  marker.classList.remove('hidden');
+}
 
 export function computeSmoothedTarget(points) {
   if (!Array.isArray(points) || points.length === 0) return null;
@@ -53,10 +236,10 @@ export function setAllTelemetryEmpty(isEmpty) {
   ].forEach((id) => setContainerEmpty(id, isEmpty));
 }
 
-export function updateSimpleGauge(mbps, tone = 'idle') {
+export function updateSimpleGauge(mbps, tone = 'idle', scaleMaxMbps = DEFAULT_GAUGE_SCALE_MAX) {
   const stage = document.getElementById('simpleSpeedStage');
   if (!stage) return;
-  stage.style.setProperty('--pct', String(computeGaugePercent(mbps)));
+  stage.style.setProperty('--pct', String(computeGaugePercentForScale(mbps, scaleMaxMbps)));
   stage.dataset.gaugeTone = tone || 'idle';
 }
 
@@ -164,7 +347,9 @@ export function resetTelemetryUI(profileLabel, thermometer) {
   // Modo Simples
   setText('simpleHeroEyebrow', 'INICIANDO TESTE');
   setText('simplePhaseLabel', 'Preparando');
-  setText('simpleCurrentSpeed', '0.0');
+  renderTabularSpeedValue('simpleCurrentSpeed', '0.0');
+  setText('simplePlanRef', '');
+  document.getElementById('simplePlanRef')?.classList.add('hidden');
   setText('simpleDownloadVal', '—');
   setText('simpleUploadVal', '—');
   setText('simplePingVal', '—');
@@ -205,7 +390,13 @@ export function resetTelemetryUI(profileLabel, thermometer) {
   renderLatencyComparisonChart(document.getElementById('latencyChart'), null);
 }
 
-export function setRunningControls(isRunning) {
+/**
+ * Atualiza estado visual dos botões e indicadores enquanto um teste está em execução.
+ *
+ * @param {boolean} isRunning
+ * @param {{ hasCompleted?: boolean }} [options]
+ */
+export function setRunningControls(isRunning, { hasCompleted = false } = {}) {
   const active = Boolean(isRunning);
   document.body?.classList?.toggle('is-measuring', active);
 
@@ -233,7 +424,13 @@ export function setRunningControls(isRunning) {
     btnAdv.classList.toggle('cancel', active);
   }
   if (btnSimple) {
-    btnSimple.textContent = active ? 'Cancelar Teste' : 'Iniciar Teste';
+    const simpleLabel = active
+      ? 'Cancelar Teste'
+      : hasCompleted
+        ? 'Testar novamente'
+        : 'Iniciar Teste';
+    const simpleIcon = active ? 'stop' : hasCompleted ? 'refresh' : 'play';
+    setButtonIconAndLabel(btnSimple, simpleIcon, simpleLabel);
     btnSimple.classList.toggle('cancel', active);
   }
 }

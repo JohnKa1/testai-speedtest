@@ -67,12 +67,16 @@ import {
   setText
 } from './utils/formatters.js';
 import { isNonNegativeNumber, METRIC_STATUS } from './utils/validators.js';
+import { setButtonIconAndLabel } from './ui/icons.js';
 import {
   PHASE_LABELS,
   computeSmoothedTarget,
   downloadFile,
+  formatContractedPlanReference,
   hideStatusBanner,
+  renderTabularSpeedValue,
   resetTelemetryUI,
+  resolveGaugeScaleMax,
   setActiveMetricPhase,
   setAllTelemetryEmpty,
   setContainerEmpty,
@@ -84,7 +88,8 @@ import {
   updateLoadedJitterUI,
   updateOnlineIndicator,
   updateProgressBar,
-  updateSimpleGauge
+  updateSimpleGauge,
+  updateSimpleGaugePlanMarker
 } from './ui/telemetry-view.js';
 import {
   renderCapabilitiesGrid,
@@ -119,10 +124,100 @@ const state = {
   renderedSpeedMbps: 0,
   targetSpeedMbps: 0,
   activePhase: 'idle',
+  hasCompletedTest: false,
+  contractedMbps: null,
   diagDetailsExpanded: false,
   backgroundedDuringRun: false,
   deviceLookupSeq: 0
 };
+
+const CONTRACTED_PLAN_STORAGE_KEY = 'testai_contracted_mbps';
+
+function parseContractedMbpsValue(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num <= 0 || num > 100000) return null;
+  return num;
+}
+
+function readPersistedContractedMbps() {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    return parseContractedMbpsValue(localStorage.getItem(CONTRACTED_PLAN_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function persistContractedMbps(value) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (isNonNegativeNumber(value) && value > 0) {
+      localStorage.setItem(CONTRACTED_PLAN_STORAGE_KEY, String(value));
+    } else {
+      localStorage.removeItem(CONTRACTED_PLAN_STORAGE_KEY);
+    }
+  } catch {
+    // Armazenamento pode estar indisponível em modo privado/embed
+  }
+}
+
+function updateSimplePlanReferenceUI(measuredMbps, contractedMbps) {
+  const refEl = document.getElementById('simplePlanRef');
+  if (!refEl) return;
+  const text = formatContractedPlanReference(measuredMbps, contractedMbps);
+  if (text) {
+    refEl.textContent = text;
+    refEl.classList.remove('hidden');
+  } else {
+    refEl.textContent = '';
+    refEl.classList.add('hidden');
+  }
+}
+
+function syncContractedPlanValue(rawValue, sourceId = '') {
+  const parsed = parseContractedMbpsValue(rawValue);
+  state.contractedMbps = parsed;
+  const formattedVal = parsed !== null ? String(parsed) : '';
+
+  const simpleInput = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('simpleContractedInput')
+  );
+  const advInput = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('contractedInput')
+  );
+
+  if (simpleInput && sourceId !== 'simpleContractedInput') {
+    simpleInput.value = formattedVal;
+  }
+  if (advInput && sourceId !== 'contractedInput') {
+    advInput.value = formattedVal;
+  }
+
+  if (sourceId !== 'init') {
+    persistContractedMbps(parsed);
+  }
+
+  syncContextIndicator();
+  updateSimpleGaugePlanMarker(parsed);
+
+  if (state.lastResult) {
+    const dlInfo = resolvePrimaryAndPeakSpeed(
+      state.lastResult.series.downloadPoints,
+      state.lastResult.metrics.download,
+      state.lastResult.stats?.download,
+      { measurementMode: state.lastResult.measurementMode }
+    );
+    const dlMeasured =
+      dlInfo.status === METRIC_STATUS.MEASURED && isNonNegativeNumber(dlInfo.primary);
+    updateSimplePlanReferenceUI(dlMeasured ? dlInfo.primary : null, parsed);
+    updateSimpleGauge(
+      dlMeasured ? dlInfo.primary : 0,
+      state.lastResult.incomplete ? 'warning' : state.lastDiagnosis?.severity || 'good',
+      resolveGaugeScaleMax(parsed)
+    );
+  }
+}
 
 const thermometer = new ThermometerComponent();
 const deviceService = new DeviceSpecsService();
@@ -153,7 +248,7 @@ function setShareButtonVisible(visible) {
   if (shareBtn) {
     shareBtn.classList.toggle('hidden', !visible);
     shareBtn.disabled = !visible;
-    shareBtn.textContent = 'Compartilhar Resultado';
+    setButtonIconAndLabel(shareBtn, 'share', 'Compartilhar Resultado');
   }
   const copyBtn = /** @type {HTMLButtonElement | null} */ (
     document.getElementById('copySummaryBtn')
@@ -161,7 +256,7 @@ function setShareButtonVisible(visible) {
   if (copyBtn) {
     copyBtn.classList.toggle('hidden', !visible);
     copyBtn.disabled = !visible;
-    copyBtn.textContent = 'Copiar Resumo';
+    setButtonIconAndLabel(copyBtn, 'copy', 'Copiar Resumo');
   }
 }
 
@@ -274,10 +369,11 @@ function startDisplayLoop() {
     if (state.activePhase === 'download' || state.activePhase === 'upload') {
       const formatted = state.renderedSpeedMbps.toFixed(1);
       setText('currentSpeed', formatted);
-      setText('simpleCurrentSpeed', formatted);
+      renderTabularSpeedValue('simpleCurrentSpeed', formatted);
       updateSimpleGauge(
         state.renderedSpeedMbps,
-        state.activePhase === 'upload' ? 'upload' : 'download'
+        state.activePhase === 'upload' ? 'upload' : 'download',
+        resolveGaugeScaleMax(state.contractedMbps)
       );
       thermometer.update(state.renderedSpeedMbps, state.activePhase);
     }
@@ -303,7 +399,7 @@ const speedTestService = new SpeedTestService({
     resetTelemetryUI(profile.label, thermometer);
     resetDiagnosticsAndTechnicalUI();
     renderCapabilitiesSkeleton({ busy: true });
-    setRunningControls(true);
+    setRunningControls(true, { hasCompleted: state.hasCompletedTest });
     setShareButtonVisible(false);
     resetUsageVerdictsUI();
     hideStatusBanner();
@@ -318,7 +414,8 @@ const speedTestService = new SpeedTestService({
   onFinish(result) {
     stopDisplayLoop();
     setActiveMetricPhase(null);
-    setRunningControls(false);
+    state.hasCompletedTest = true;
+    setRunningControls(false, { hasCompleted: true });
     handleCompletedResult(result);
     if (state.backgroundedDuringRun) {
       showStatusBanner(
@@ -331,16 +428,21 @@ const speedTestService = new SpeedTestService({
   onCancel() {
     stopDisplayLoop();
     setActiveMetricPhase(null);
-    setRunningControls(false);
+    setRunningControls(false, { hasCompleted: state.hasCompletedTest });
     setShareButtonVisible(false);
     resetUsageVerdictsUI();
     setAllTelemetryEmpty(false);
     renderCapabilitiesSkeleton({ busy: false });
-    updateSimpleGauge(0, 'idle');
+    updateSimpleGauge(0, 'idle', resolveGaugeScaleMax(state.contractedMbps));
     state.activePhase = 'cancelled';
     setText('phaseLabel', PHASE_LABELS.cancelled);
     setText('simplePhaseLabel', PHASE_LABELS.cancelled);
-    setText('simpleLiveHint', 'Medição cancelada. Clique em Iniciar Teste quando quiser recomeçar.');
+    setText(
+      'simpleLiveHint',
+      state.hasCompletedTest
+        ? 'Medição cancelada. Clique em Testar novamente quando quiser recomeçar.'
+        : 'Medição cancelada. Clique em Iniciar Teste quando quiser recomeçar.'
+    );
     document.getElementById('simpleLiveHint')?.classList.remove('hidden');
     updateProgressBar(0, 'Teste cancelado pelo usuário.');
     showStatusBanner('warning', 'Execução interrompida manualmente.');
@@ -350,7 +452,10 @@ const speedTestService = new SpeedTestService({
     const failedPhase = state.activePhase;
     stopDisplayLoop();
     setActiveMetricPhase(null);
-    setRunningControls(false);
+    if (errorPayload.partialResult) {
+      state.hasCompletedTest = true;
+    }
+    setRunningControls(false, { hasCompleted: state.hasCompletedTest });
     state.activePhase = 'error';
     setText('phaseLabel', PHASE_LABELS.error);
     setText('simplePhaseLabel', PHASE_LABELS.error);
@@ -369,7 +474,7 @@ const speedTestService = new SpeedTestService({
       resetUsageVerdictsUI();
       setAllTelemetryEmpty(false);
       renderCapabilitiesSkeleton({ busy: false });
-      updateSimpleGauge(0, 'danger');
+      updateSimpleGauge(0, 'danger', resolveGaugeScaleMax(state.contractedMbps));
     }
   }
 });
@@ -529,9 +634,9 @@ function handleCompletedResult(result, isPartial = false) {
   const pingFinal = formatLatency(m.ping.value, 0, m.ping.status);
 
   // Atualiza Modo Simples (estatística canônica idêntica para Download e Upload)
-  setText('simpleHeroEyebrow', speedMeta.simpleHeroLabel);
-  setText('simplePhaseLabel', isPartial ? 'Parcial' : 'Concluído');
-  setText('simpleCurrentSpeed', dlFinal);
+  setText('simpleHeroEyebrow', isCommercial ? 'Download (P90)' : 'Download (P50)');
+  setText('simplePhaseLabel', isPartial ? 'Teste parcial' : PHASE_LABELS.completed);
+  renderTabularSpeedValue('simpleCurrentSpeed', dlFinal);
   setUnitVisible('simpleSpeedUnit', dlMeasured);
   setText('simpleDownloadVal', formatMetricWithUnit(dlInfo.primary, 'Mbps', 1, dlInfo.status));
   setText('simpleUploadVal', formatMetricWithUnit(ulInfo.primary, 'Mbps', 1, ulInfo.status));
@@ -563,7 +668,13 @@ function handleCompletedResult(result, isPartial = false) {
   setText('simpleStabilitySub', stability.sub);
   setSimpleStatTone('simpleStabilityVal', stability.tone);
 
-  updateSimpleGauge(dlMeasured ? dlInfo.primary : 0, isPartial ? 'warning' : diagnosis.severity);
+  const activePlanMbps = state.contractedMbps ?? result.context?.contractedMbps ?? null;
+  updateSimpleGauge(
+    dlMeasured ? dlInfo.primary : 0,
+    isPartial ? 'warning' : diagnosis.severity,
+    resolveGaugeScaleMax(activePlanMbps)
+  );
+  updateSimplePlanReferenceUI(dlMeasured ? dlInfo.primary : null, activePlanMbps);
 
   const uploadUnavailable = isPartial && m.upload.status !== METRIC_STATUS.MEASURED;
   setText(
@@ -676,21 +787,24 @@ function triggerStartOrCancel() {
   const contractedEl = /** @type {HTMLInputElement | null} */ (
     document.getElementById('contractedInput')
   );
+  const simpleContractedEl = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('simpleContractedInput')
+  );
   const notesEl = /** @type {HTMLInputElement | null} */ (
     document.getElementById('techNotesInput')
   );
 
   const profileId = profileEl?.value || 'standard';
   const linkType = linkEl?.value || 'nao-informado';
-  const contractedRaw = Number(contractedEl?.value);
+  const contractedMbps =
+    state.contractedMbps ??
+    parseContractedMbpsValue(contractedEl?.value) ??
+    parseContractedMbpsValue(simpleContractedEl?.value);
   const notes = notesEl?.value || '';
 
   speedTestService.start(profileId, {
     linkType,
-    contractedMbps:
-      Number.isFinite(contractedRaw) && contractedRaw > 0 && contractedRaw <= 100000
-        ? contractedRaw
-        : null,
+    contractedMbps,
     notes
   });
 }
@@ -788,7 +902,14 @@ function initApp() {
   });
 
   document.getElementById('linkTypeSelect')?.addEventListener('change', syncContextIndicator);
-  document.getElementById('contractedInput')?.addEventListener('input', syncContextIndicator);
+  document.getElementById('contractedInput')?.addEventListener('input', (e) => {
+    const target = /** @type {HTMLInputElement | null} */ (e.target);
+    syncContractedPlanValue(target?.value ?? '', 'contractedInput');
+  });
+  document.getElementById('simpleContractedInput')?.addEventListener('input', (e) => {
+    const target = /** @type {HTMLInputElement | null} */ (e.target);
+    syncContractedPlanValue(target?.value ?? '', 'simpleContractedInput');
+  });
 
   document.getElementById('diagDetailsToggle')?.addEventListener('click', () => {
     state.diagDetailsExpanded = !state.diagDetailsExpanded;
@@ -805,21 +926,21 @@ function initApp() {
     if (!state.lastResult || shareBtn.disabled) return;
     clearShareFeedbackTimer();
     shareBtn.disabled = true;
-    shareBtn.textContent = 'Gerando card...';
+    setButtonIconAndLabel(shareBtn, 'share', 'Gerando card...');
 
     let status = 'error';
     try {
       const outcome = await shareTestResult(state.lastResult, getRuntimeConfig());
       status = outcome.status;
       if (status === 'shared') {
-        shareBtn.textContent = 'Compartilhado!';
+        setButtonIconAndLabel(shareBtn, 'check', 'Compartilhado!');
       } else if (status === 'downloaded') {
-        shareBtn.textContent = 'Card salvo!';
+        setButtonIconAndLabel(shareBtn, 'check', 'Card salvo!');
       } else {
-        shareBtn.textContent = 'Compartilhar Resultado';
+        setButtonIconAndLabel(shareBtn, 'share', 'Compartilhar Resultado');
       }
     } catch {
-      shareBtn.textContent = 'Erro ao gerar card';
+      setButtonIconAndLabel(shareBtn, 'share', 'Erro ao gerar card');
     }
 
     if (status === 'cancelled') {
@@ -830,7 +951,7 @@ function initApp() {
     shareFeedbackTimerId = setTimeout(() => {
       shareFeedbackTimerId = null;
       if (speedTestService.isRunning()) return;
-      shareBtn.textContent = 'Compartilhar Resultado';
+      setButtonIconAndLabel(shareBtn, 'share', 'Compartilhar Resultado');
       shareBtn.disabled = false;
     }, 2200);
   });
@@ -845,12 +966,16 @@ function initApp() {
 
     const summaryText = buildShareSummaryText(state.lastResult, getRuntimeConfig());
     const copied = await copyTextToClipboard(summaryText);
-    copySummaryBtn.textContent = copied ? 'Resumo copiado!' : 'Erro ao copiar';
+    setButtonIconAndLabel(
+      copySummaryBtn,
+      copied ? 'check' : 'copy',
+      copied ? 'Resumo copiado!' : 'Erro ao copiar'
+    );
 
     copySummaryTimerId = setTimeout(() => {
       copySummaryTimerId = null;
       if (speedTestService.isRunning()) return;
-      copySummaryBtn.textContent = 'Copiar Resumo';
+      setButtonIconAndLabel(copySummaryBtn, 'copy', 'Copiar Resumo');
       copySummaryBtn.disabled = false;
     }, 2000);
   });
@@ -949,6 +1074,7 @@ function initApp() {
   setUiMode('simple');
   setupTabs();
   updateOnlineIndicator();
+  syncContractedPlanValue(readPersistedContractedMbps(), 'init');
   devicePanel.renderBrandCards();
   setupInstallPrompt();
   registerServiceWorker();

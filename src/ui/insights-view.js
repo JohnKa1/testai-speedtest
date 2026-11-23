@@ -4,6 +4,7 @@
  */
 
 import { clearElement, createEl } from '../utils/formatters.js';
+import { createSvgIcon } from './icons.js';
 
 const LEVEL_TO_TONE = Object.freeze({
   otimo: 'good',
@@ -75,11 +76,34 @@ export function renderUsageVerdictsAndComparison(verdicts, comparisonDelta) {
     const card = createEl('article', 'card usage-verdict-card');
 
     const top = createEl('div', 'usage-verdict-top');
-    top.appendChild(createEl('h3', 'usage-verdict-title', item.title));
+    const titleWrap = createEl('div', 'usage-verdict-title-wrap');
+    const iconSvg = item.icon ? createSvgIcon(item.icon, { size: 18 }) : null;
+    if (iconSvg) {
+      titleWrap.appendChild(iconSvg);
+    }
+    titleWrap.appendChild(createEl('h3', 'usage-verdict-title', item.title));
+    top.appendChild(titleWrap);
     top.appendChild(createEl('span', `capability-pill tone-${tone}`, item.label));
 
     card.appendChild(top);
     card.appendChild(createEl('p', 'usage-verdict-reason', item.reason));
+
+    const headroomPct =
+      typeof item.headroomPct === 'number' && Number.isFinite(item.headroomPct)
+        ? Math.max(0, Math.min(100, Math.round(item.headroomPct)))
+        : 50;
+    const marginWrap = createEl('div', 'usage-margin-wrap');
+    const track = createEl('div', 'usage-margin-track');
+    track.setAttribute('aria-hidden', 'true');
+    const fill = createEl('div', `usage-margin-fill tone-${tone}`);
+    fill.style.width = `${headroomPct}%`;
+    track.appendChild(fill);
+    marginWrap.appendChild(track);
+    if (item.headroomLabel) {
+      marginWrap.appendChild(createEl('span', 'usage-margin-label', item.headroomLabel));
+    }
+    card.appendChild(marginWrap);
+
     grid.appendChild(card);
   }
 

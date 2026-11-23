@@ -14,10 +14,17 @@ import { isNonNegativeNumber, METRIC_STATUS } from '../utils/validators.js';
  * @typedef {Object} UsageVerdict
  * @property {string} id
  * @property {string} title
+ * @property {'gamepad' | 'video' | 'tv'} icon
  * @property {UsageVerdictLevel} level
  * @property {UsageVerdictLabel} label
  * @property {string} reason
+ * @property {number} headroomPct
+ * @property {string} headroomLabel
  */
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
 
 function readMeasuredMetric(metric) {
   if (metric?.status !== METRIC_STATUS.MEASURED || !isNonNegativeNumber(metric?.value)) {
@@ -46,9 +53,12 @@ function evaluateFpsGaming(pingMs, jitterMs, loadedDeltaMs) {
     return {
       id: 'fps-gaming',
       title: 'Jogos FPS',
+      icon: /** @type {'gamepad'} */ ('gamepad'),
       level: /** @type {UsageVerdictLevel} */ ('atencao'),
       label: /** @type {UsageVerdictLabel} */ ('Atenção'),
-      reason: 'Latência não pôde ser aferida completamente.'
+      reason: 'Latência não pôde ser aferida completamente.',
+      headroomPct: 12,
+      headroomLabel: 'Sem medição de resposta'
     };
   }
 
@@ -57,36 +67,50 @@ function evaluateFpsGaming(pingMs, jitterMs, loadedDeltaMs) {
 
   if (effectiveDelta >= 50 || pingMs > 60 || effectiveJitter > 15) {
     let reason = `Ping alto em repouso (${pingMs.toFixed(0)} ms).`;
+    let headroomLabel = `Ping ${pingMs.toFixed(0)} ms (alvo competitivo < 45 ms)`;
     if (effectiveDelta >= 50) {
       reason = `Latência sobe +${effectiveDelta.toFixed(0)} ms sob carga (bufferbloat).`;
+      headroomLabel = `Atraso extra sob carga reduz estabilidade`;
     } else if (effectiveJitter > 15) {
       reason = `Jitter elevado (${effectiveJitter.toFixed(1)} ms) causa instabilidade de mira.`;
+      headroomLabel = `Oscilação alta no tempo de resposta`;
     }
     return {
       id: 'fps-gaming',
       title: 'Jogos FPS',
+      icon: /** @type {'gamepad'} */ ('gamepad'),
       level: /** @type {UsageVerdictLevel} */ ('atencao'),
       label: /** @type {UsageVerdictLabel} */ ('Atenção'),
-      reason
+      reason,
+      headroomPct: clampPercent(34 - Math.min(20, effectiveDelta / 10)),
+      headroomLabel
     };
   }
 
   if (pingMs <= 25 && effectiveJitter <= 5 && effectiveDelta < 20) {
+    const pingMargin = Math.max(0, Math.min(1, (60 - pingMs) / 50));
+    const loadMargin = Math.max(0, Math.min(1, (50 - effectiveDelta) / 50));
     return {
       id: 'fps-gaming',
       title: 'Jogos FPS',
+      icon: /** @type {'gamepad'} */ ('gamepad'),
       level: /** @type {UsageVerdictLevel} */ ('otimo'),
       label: /** @type {UsageVerdictLabel} */ ('Ótimo'),
-      reason: `Ping ${pingMs.toFixed(0)} ms, jitter ${effectiveJitter.toFixed(1)} ms e Δ +${effectiveDelta.toFixed(0)} ms sob carga.`
+      reason: `Ping ${pingMs.toFixed(0)} ms, jitter ${effectiveJitter.toFixed(1)} ms e Δ +${effectiveDelta.toFixed(0)} ms sob carga.`,
+      headroomPct: clampPercent(72 + ((pingMargin + loadMargin) / 2) * 26),
+      headroomLabel: `Folga de baixa latência · ${pingMs.toFixed(0)} ms (alvo < 25 ms)`
     };
   }
 
   return {
     id: 'fps-gaming',
     title: 'Jogos FPS',
+    icon: /** @type {'gamepad'} */ ('gamepad'),
     level: /** @type {UsageVerdictLevel} */ ('bom'),
     label: /** @type {UsageVerdictLabel} */ ('Bom'),
-    reason: `Jogável (${pingMs.toFixed(0)} ms), mas downloads pesados somam Δ +${effectiveDelta.toFixed(0)} ms.`
+    reason: `Jogável (${pingMs.toFixed(0)} ms), mas downloads pesados somam Δ +${effectiveDelta.toFixed(0)} ms.`,
+    headroomPct: clampPercent(70 - effectiveDelta * 0.4),
+    headroomLabel: `Jogável em ${pingMs.toFixed(0)} ms · leve variação com rede cheia`
   };
 }
 
@@ -95,9 +119,12 @@ function evaluateVideoCalls(uploadMbps, loadedDeltaMs) {
     return {
       id: 'video-calls',
       title: 'Videochamadas',
+      icon: /** @type {'video'} */ ('video'),
       level: /** @type {UsageVerdictLevel} */ ('atencao'),
       label: /** @type {UsageVerdictLabel} */ ('Atenção'),
-      reason: 'Taxa de envio (upload) indisponível ou falhou nesta rede.'
+      reason: 'Taxa de envio (upload) indisponível ou falhou nesta rede.',
+      headroomPct: 10,
+      headroomLabel: 'Envio (upload) não medido'
     };
   }
 
@@ -111,28 +138,39 @@ function evaluateVideoCalls(uploadMbps, loadedDeltaMs) {
     return {
       id: 'video-calls',
       title: 'Videochamadas',
+      icon: /** @type {'video'} */ ('video'),
       level: /** @type {UsageVerdictLevel} */ ('atencao'),
       label: /** @type {UsageVerdictLabel} */ ('Atenção'),
-      reason
+      reason,
+      headroomPct: uploadMbps < 10 ? clampPercent(Math.max(14, (uploadMbps / 10) * 32)) : 32,
+      headroomLabel:
+        uploadMbps < 10 ? 'Abaixo dos 10 Mbps recomendados' : 'Atraso alto durante envios'
     };
   }
 
   if (uploadMbps >= 25 && effectiveDelta < 25) {
+    const streamsCount = Math.max(2, Math.min(12, Math.floor(uploadMbps / 10)));
     return {
       id: 'video-calls',
       title: 'Videochamadas',
+      icon: /** @type {'video'} */ ('video'),
       level: /** @type {UsageVerdictLevel} */ ('otimo'),
       label: /** @type {UsageVerdictLabel} */ ('Ótimo'),
-      reason: `Upload de ${uploadMbps.toFixed(1)} Mbps com resposta estável (Δ +${effectiveDelta.toFixed(0)} ms).`
+      reason: `Upload de ${uploadMbps.toFixed(1)} Mbps com resposta estável (Δ +${effectiveDelta.toFixed(0)} ms).`,
+      headroomPct: clampPercent(70 + Math.min(28, (uploadMbps / 200) * 28)),
+      headroomLabel: `Folga para ~${streamsCount} câmeras HD simultâneas`
     };
   }
 
   return {
     id: 'video-calls',
     title: 'Videochamadas',
+    icon: /** @type {'video'} */ ('video'),
     level: /** @type {UsageVerdictLevel} */ ('bom'),
     label: /** @type {UsageVerdictLabel} */ ('Bom'),
-    reason: `Upload de ${uploadMbps.toFixed(1)} Mbps atende chamadas Full HD com leve sensibilidade sob carga.`
+    reason: `Upload de ${uploadMbps.toFixed(1)} Mbps atende chamadas Full HD com leve sensibilidade sob carga.`,
+    headroomPct: clampPercent(48 + Math.min(24, (uploadMbps / 40) * 20)),
+    headroomLabel: 'Atende 1–2 reuniões Full HD (requisito: 10 Mbps)'
   };
 }
 
@@ -141,9 +179,12 @@ function evaluateStreaming4k(sustainedDownloadMbps, stability) {
     return {
       id: 'streaming-4k',
       title: 'Streaming 4K',
+      icon: /** @type {'tv'} */ ('tv'),
       level: /** @type {UsageVerdictLevel} */ ('atencao'),
       label: /** @type {UsageVerdictLabel} */ ('Atenção'),
-      reason: 'Download sustentado não foi medido.'
+      reason: 'Download sustentado não foi medido.',
+      headroomPct: 10,
+      headroomLabel: 'Download sustentado não medido'
     };
   }
 
@@ -158,28 +199,45 @@ function evaluateStreaming4k(sustainedDownloadMbps, stability) {
     return {
       id: 'streaming-4k',
       title: 'Streaming 4K',
+      icon: /** @type {'tv'} */ ('tv'),
       level: /** @type {UsageVerdictLevel} */ ('atencao'),
       label: /** @type {UsageVerdictLabel} */ ('Atenção'),
-      reason
+      reason,
+      headroomPct:
+        sustainedDownloadMbps < 25
+          ? clampPercent(Math.max(14, (sustainedDownloadMbps / 25) * 34))
+          : 34,
+      headroomLabel:
+        sustainedDownloadMbps < 25
+          ? 'Abaixo de 25 Mbps por tela 4K'
+          : 'Oscilação pode reduzir qualidade'
     };
   }
 
   if (sustainedDownloadMbps >= 50 && stabilityTone === 'good') {
+    const screens4k = Math.max(2, Math.floor(sustainedDownloadMbps / 25));
     return {
       id: 'streaming-4k',
       title: 'Streaming 4K',
+      icon: /** @type {'tv'} */ ('tv'),
       level: /** @type {UsageVerdictLevel} */ ('otimo'),
       label: /** @type {UsageVerdictLabel} */ ('Ótimo'),
-      reason: `Vazão sustentada de ${sustainedDownloadMbps.toFixed(1)} Mbps com estabilidade ${stabilityLabel}.`
+      reason: `Vazão sustentada de ${sustainedDownloadMbps.toFixed(1)} Mbps com estabilidade ${stabilityLabel}.`,
+      headroomPct: clampPercent(70 + Math.min(30, (sustainedDownloadMbps / 400) * 30)),
+      headroomLabel: `Até ${screens4k} telas em 4K UHD ao mesmo tempo`
     };
   }
 
+  const screens4k = Math.max(1, Math.floor(sustainedDownloadMbps / 25));
   return {
     id: 'streaming-4k',
     title: 'Streaming 4K',
+    icon: /** @type {'tv'} */ ('tv'),
     level: /** @type {UsageVerdictLevel} */ ('bom'),
     label: /** @type {UsageVerdictLabel} */ ('Bom'),
-    reason: `Suporta streaming 4K (${sustainedDownloadMbps.toFixed(1)} Mbps sustentados; estabilidade ${stabilityLabel}).`
+    reason: `Suporta streaming 4K (${sustainedDownloadMbps.toFixed(1)} Mbps sustentados; estabilidade ${stabilityLabel}).`,
+    headroomPct: clampPercent(46 + Math.min(26, (sustainedDownloadMbps / 100) * 25)),
+    headroomLabel: `Folga para ${screens4k} tela(s) 4K (25 Mbps por tela)`
   };
 }
 

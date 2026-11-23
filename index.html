@@ -171,27 +171,111 @@
                   d="M 24 158 A 136 136 0 0 1 296 158"
                   pathLength="100"
                 />
+                <circle
+                  class="simple-gauge-target hidden"
+                  id="simpleGaugeTargetMarker"
+                  cx="160"
+                  cy="22"
+                  r="5"
+                />
               </svg>
               <div class="simple-speed-readout">
-                <span class="simple-speed-number" id="simpleCurrentSpeed">0.0</span>
+                <span class="simple-speed-number" id="simpleCurrentSpeed"
+                  ><span class="speed-int">0</span><span class="speed-dec">,0</span></span
+                >
                 <span class="simple-speed-unit" id="simpleSpeedUnit">Mbps</span>
+              </div>
+              <div class="simple-gauge-scale" aria-hidden="true">
+                <span class="gauge-scale-min">0</span>
+                <span class="gauge-scale-max" id="simpleGaugeMaxLabel">1,2 Gbps</span>
               </div>
             </div>
 
             <p class="simple-live-hint" id="simpleLiveHint">
               Toque no botão abaixo para medir download, upload, ping e estabilidade real.
             </p>
+            <p class="simple-plan-ref hidden" id="simplePlanRef" aria-live="polite"></p>
 
             <div class="simple-cta-row">
               <button type="button" id="startBtnSimple" class="btn-primary btn-hero">
-                Iniciar Teste
+                <svg
+                  class="ui-icon"
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <polygon points="6 3 20 12 6 21 6 3" />
+                </svg>
+                <span class="btn-label">Iniciar Teste</span>
               </button>
               <button type="button" id="shareResultBtn" class="btn-secondary hidden">
-                Compartilhar Resultado
+                <svg
+                  class="ui-icon"
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+                <span class="btn-label">Compartilhar Resultado</span>
               </button>
               <button type="button" id="copySummaryBtn" class="btn-secondary hidden">
-                Copiar Resumo
+                <svg
+                  class="ui-icon"
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                <span class="btn-label">Copiar Resumo</span>
               </button>
+            </div>
+
+            <div class="simple-plan-bar">
+              <label class="simple-plan-label" for="simpleContractedInput">
+                Plano contratado (opcional)
+              </label>
+              <div class="simple-plan-input-wrap">
+                <input
+                  type="number"
+                  id="simpleContractedInput"
+                  class="control-input simple-plan-input"
+                  min="1"
+                  max="100000"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="Ex.: 400"
+                  aria-label="Plano contratado em Mbps (opcional)"
+                />
+                <span class="simple-plan-unit mono">Mbps</span>
+              </div>
             </div>
 
             <!-- RESUMO SIMPLIFICADO DE 4 INDICADORES -->
