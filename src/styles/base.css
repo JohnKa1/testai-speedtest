@@ -214,6 +214,23 @@ body[data-ui-mode='advanced'] .app-shell {
   padding: clamp(var(--sp-4), 2.2vw, var(--sp-5));
 }
 
+.glass,
+.card.glass,
+.control-bar.glass {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass,
+  .card.glass,
+  .control-bar.glass {
+    background: var(--surface-1);
+  }
+}
+
 .simple-summary-grid > *,
 .capabilities-grid > *,
 .device-bands-grid > *,

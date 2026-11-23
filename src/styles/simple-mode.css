@@ -15,7 +15,6 @@
   text-align: center;
   gap: var(--sp-4);
   padding: clamp(var(--sp-6), 4vw, var(--sp-7)) clamp(var(--sp-4), 3vw, var(--sp-6));
-  background: var(--surface-1);
 }
 
 .simple-hero-top {
