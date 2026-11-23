@@ -248,9 +248,17 @@ function getResourceTtfbMs(url) {
   return null;
 }
 
+function clampParallelStreams(value, fallback) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return Math.max(1, Math.min(8, Math.floor(num)));
+}
+
 export function createRunAccumulator(options = {}) {
+  const measurementMode = options.measurementMode === 'commercial' ? 'commercial' : 'sustained';
   const latencyPerc = options.latencyPercentile ?? 0.5;
-  const rampDiscardMs = options.rampDiscardMs ?? 1000;
+  const bandwidthPerc = measurementMode === 'commercial' ? 0.9 : (options.bandwidthPercentile ?? 0.5);
+  const rampDiscardMs = measurementMode === 'commercial' ? 0 : (options.rampDiscardMs ?? 1000);
 
   const state = {
     downloadPoints: [],
@@ -265,15 +273,28 @@ export function createRunAccumulator(options = {}) {
     rateLimitDownshifts: 0
   };
 
-  const getFilteredDownload = () => selectSteadyStatePoints(state.downloadPoints, rampDiscardMs, 4);
-  const getFilteredUpload = () => selectSteadyStatePoints(state.uploadPoints, rampDiscardMs, 4);
+  const getFilteredDownload = () =>
+    measurementMode === 'commercial'
+      ? selectSteadyStatePoints(state.downloadPoints, 0, 1)
+      : selectSteadyStatePoints(state.downloadPoints, rampDiscardMs, 4);
+  const getFilteredUpload = () =>
+    measurementMode === 'commercial'
+      ? selectSteadyStatePoints(state.uploadPoints, 0, 1)
+      : selectSteadyStatePoints(state.uploadPoints, rampDiscardMs, 4);
 
   const calcLat = (arr) => (arr.length > 0 ? computePercentile(arr, latencyPerc) : undefined);
-  const calcBw = (pts) => {
+  const calcBwPercentile = (pts, perc) => {
+    const bpsList = pts.map((p) => p.bps).filter((v) => isPositiveNumber(v));
+    if (bpsList.length === 0) return undefined;
+    return computePercentile(bpsList, perc) ?? undefined;
+  };
+  const calcBwMean = (pts) => {
     const bpsList = pts.map((p) => p.bps).filter((v) => isPositiveNumber(v));
     if (bpsList.length === 0) return undefined;
     return bpsList.reduce((acc, v) => acc + v, 0) / bpsList.length;
   };
+  const calcBwPrimary = (pts) =>
+    measurementMode === 'commercial' ? calcBwPercentile(pts, bandwidthPerc) : calcBwMean(pts);
 
   return {
     state,
@@ -282,8 +303,10 @@ export function createRunAccumulator(options = {}) {
     getUnloadedLatencyPoints: () => state.unloadedLatencies.slice(),
     getDownLoadedLatencyPoints: () => state.downloadLoadedLatencies.slice(),
     getUpLoadedLatencyPoints: () => state.uploadLoadedLatencies.slice(),
-    getDownloadBandwidth: () => calcBw(getFilteredDownload()),
-    getUploadBandwidth: () => calcBw(getFilteredUpload()),
+    getDownloadBandwidth: () => calcBwPrimary(getFilteredDownload()),
+    getUploadBandwidth: () => calcBwPrimary(getFilteredUpload()),
+    getSustainedDownloadBandwidth: () => calcBwPercentile(getFilteredDownload(), 0.5),
+    getSustainedUploadBandwidth: () => calcBwPercentile(getFilteredUpload(), 0.5),
     getUnloadedLatency: () => calcLat(state.unloadedLatencies),
     getUnloadedJitter: () => {
       const jit = computeJitterMs(state.unloadedLatencies);
@@ -303,9 +326,12 @@ export function createRunAccumulator(options = {}) {
     getTotalUploadBytes: () => state.totalUploadBytes,
     getSummary: () => ({
       engine: 'testai-multistream',
+      measurementMode,
       latency: calcLat(state.unloadedLatencies),
-      download: calcBw(getFilteredDownload()),
-      upload: calcBw(getFilteredUpload()),
+      download: calcBwPrimary(getFilteredDownload()),
+      upload: calcBwPrimary(getFilteredUpload()),
+      sustainedDownload: calcBwPercentile(getFilteredDownload(), 0.5),
+      sustainedUpload: calcBwPercentile(getFilteredUpload(), 0.5),
       downLoadedLatency: calcLat(state.downloadLoadedLatencies),
       upLoadedLatency: calcLat(state.uploadLoadedLatencies),
       downloadStallsRecovered: state.downloadStallsRecovered,
@@ -382,10 +408,22 @@ export class SpeedTestService {
 
     const baseProfile = TEST_PROFILES[profileId] || TEST_PROFILES.standard;
     const cfg = this.runtimeConfig || getRuntimeConfig();
+    const measurementMode = cfg.measurementMode === 'commercial' ? 'commercial' : 'sustained';
+    const baseOpts = baseProfile.options;
+    const isCommercial = measurementMode === 'commercial';
     const profile = {
       ...baseProfile,
       options: {
-        ...baseProfile.options,
+        ...baseOpts,
+        measurementMode,
+        downloadConcurrency: isCommercial
+          ? clampParallelStreams(cfg.parallelStreams?.download, baseOpts.downloadConcurrency)
+          : baseOpts.downloadConcurrency,
+        uploadConcurrency: isCommercial
+          ? clampParallelStreams(cfg.parallelStreams?.upload, baseOpts.uploadConcurrency)
+          : baseOpts.uploadConcurrency,
+        rampDiscardMs: isCommercial ? 0 : baseOpts.rampDiscardMs,
+        bandwidthPercentile: isCommercial ? 0.9 : baseOpts.bandwidthPercentile,
         downloadApiUrl: cfg.endpoints.down,
         uploadApiUrl: cfg.endpoints.up,
         pingApiUrl: cfg.endpoints.ping
@@ -1097,7 +1135,7 @@ export class SpeedTestService {
     }, opts.sampleIntervalMs || 250);
 
     const uploadWorker = async (workerId) => {
-      if (workerId >= 2) {
+      if (workerId >= 2 && opts.measurementMode !== 'commercial') {
         const staggerStart = performance.now();
         while (
           !phaseSignal.aborted &&
@@ -1419,11 +1457,19 @@ export class SpeedTestService {
         ? results.getTotalUploadBytes()
         : ulPoints.reduce((acc, p) => acc + (p.bytes || 0), 0);
 
+    const measurementMode =
+      profile?.options?.measurementMode === 'commercial' ? 'commercial' : 'sustained';
+
     return {
       id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
       incomplete,
       durationMs,
+      measurementMode,
+      parallelStreams: {
+        download: profile?.options?.downloadConcurrency ?? 4,
+        upload: profile?.options?.uploadConcurrency ?? 4
+      },
       profile: {
         id: profile.id,
         label: profile.label

@@ -65,6 +65,8 @@
  * @property {boolean} incomplete
  * @property {number} durationMs
  * @property {{ id: string, label: string }} profile
+ * @property {'sustained' | 'commercial'} [measurementMode]
+ * @property {{ download: number, upload: number }} [parallelStreams]
  * @property {{ linkType: string, contractedMbps: number | null, notes: string }} context
  * @property {SpeedTestMetrics} metrics
  * @property {{

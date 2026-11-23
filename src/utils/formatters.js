@@ -235,22 +235,82 @@ export function computePeakMbps(points) {
 }
 
 /**
- * Resolve o valor principal (média sustentada) e o pico secundário de velocidade.
- * Em falhas ou indisponibilidade preserva o status sem exibir unidade falsa.
+ * Retorna a mediana (P50 em Mbps) observada na série.
  */
-export function resolvePrimaryAndPeakSpeed(points, metric, statsObj = null) {
-  const meanFromSeries = computeMeanMbps(points);
-  const mean = isNonNegativeNumber(meanFromSeries)
-    ? meanFromSeries
-    : isNonNegativeNumber(statsObj?.mean)
-      ? statsObj.mean
-      : null;
+export function computeP50Mbps(points) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  const valid = points.map((pt) => pt?.mbps).filter(isNonNegativeNumber);
+  return computePercentile(valid, 0.5);
+}
 
+/**
+ * Retorna o percentil 90 (P90 em Mbps) observado na série.
+ */
+export function computeP90Mbps(points) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  const valid = points.map((pt) => pt?.mbps).filter(isNonNegativeNumber);
+  return computePercentile(valid, 0.9);
+}
+
+/**
+ * Resolve o valor principal (média sustentada ou P90 no modo comercial) e o pico secundário de velocidade.
+ * Em falhas ou indisponibilidade preserva o status sem exibir unidade falsa.
+ *
+ * @param {any[]} points
+ * @param {import('../types.js').MetricEntry} metric
+ * @param {import('../types.js').DescriptiveStats | null} [statsObj]
+ * @param {{ measurementMode?: 'sustained' | 'commercial' | string }} [options]
+ * @returns {{ primary: number | null, peak: number | null, status: import('../types.js').MetricStatus, sustained?: number | null }}
+ */
+export function resolvePrimaryAndPeakSpeed(points, metric, statsObj = null, options = {}) {
   const peakFromSeries = computePeakMbps(points);
   const peak = isNonNegativeNumber(peakFromSeries)
     ? peakFromSeries
     : isNonNegativeNumber(statsObj?.max)
       ? statsObj.max
+      : null;
+
+  if (options?.measurementMode === 'commercial') {
+    const p90FromSeries = computeP90Mbps(points);
+    const p90 = isNonNegativeNumber(p90FromSeries)
+      ? p90FromSeries
+      : isNonNegativeNumber(statsObj?.p90)
+        ? statsObj.p90
+        : isNonNegativeNumber(metric?.value)
+          ? metric.value
+          : null;
+
+    const p50FromSeries = computeP50Mbps(points);
+    const sustained = isNonNegativeNumber(p50FromSeries)
+      ? p50FromSeries
+      : isNonNegativeNumber(statsObj?.p50)
+        ? statsObj.p50
+        : isNonNegativeNumber(statsObj?.mean)
+          ? statsObj.mean
+          : null;
+
+    if (metric?.status === METRIC_STATUS.MEASURED) {
+      return {
+        primary: p90,
+        sustained,
+        peak,
+        status: isNonNegativeNumber(p90) ? METRIC_STATUS.MEASURED : METRIC_STATUS.UNAVAILABLE
+      };
+    }
+
+    return {
+      primary: null,
+      sustained,
+      peak,
+      status: metric?.status || METRIC_STATUS.UNAVAILABLE
+    };
+  }
+
+  const meanFromSeries = computeMeanMbps(points);
+  const mean = isNonNegativeNumber(meanFromSeries)
+    ? meanFromSeries
+    : isNonNegativeNumber(statsObj?.mean)
+      ? statsObj.mean
       : null;
 
   if (metric?.status === METRIC_STATUS.MEASURED) {

@@ -442,15 +442,18 @@ function handleCompletedResult(result, isPartial = false) {
   state.activePhase = isPartial ? 'error' : 'completed';
 
   const m = result.metrics;
+  const isCommercial = result.measurementMode === 'commercial';
   const dlInfo = resolvePrimaryAndPeakSpeed(
     result.series.downloadPoints,
     m.download,
-    result.stats?.download
+    result.stats?.download,
+    { measurementMode: result.measurementMode }
   );
   const ulInfo = resolvePrimaryAndPeakSpeed(
     result.series.uploadPoints,
     m.upload,
-    result.stats?.upload
+    result.stats?.upload,
+    { measurementMode: result.measurementMode }
   );
 
   const dlMeasured =
@@ -459,8 +462,8 @@ function handleCompletedResult(result, isPartial = false) {
   const ulFinal = formatSpeed(ulInfo.primary, 1, ulInfo.status);
   const pingFinal = formatLatency(m.ping.value, 0, m.ping.status);
 
-  // Atualiza Modo Simples (Média como principal, Pico como secundário)
-  setText('simpleHeroEyebrow', 'DOWNLOAD MÉDIO');
+  // Atualiza Modo Simples (Média sustentada por padrão ou P90 no modo comercial)
+  setText('simpleHeroEyebrow', isCommercial ? 'DOWNLOAD' : 'DOWNLOAD MÉDIO');
   setText('simplePhaseLabel', isPartial ? 'Parcial' : 'Concluído');
   setText('simpleCurrentSpeed', dlFinal);
   setUnitVisible('simpleSpeedUnit', dlMeasured);
@@ -510,16 +513,21 @@ function handleCompletedResult(result, isPartial = false) {
   renderSimpleVerdict(diagnosis);
   renderCapabilitiesGrid(capabilities);
 
-  // Atualiza Modo Avançado (Média como principal, Pico como secundário)
+  // Atualiza Modo Avançado (Média como principal ou P90 no modo comercial, com Pico/P50 transparentes)
   setText('phaseLabel', isPartial ? 'Parcial' : 'Concluído');
-  setText('liveMetricTitle', 'DOWNLOAD (MÉDIA)');
+  setText('liveMetricTitle', isCommercial ? 'DOWNLOAD (P90)' : 'DOWNLOAD (MÉDIA)');
   setText('currentSpeed', dlFinal);
   setUnitVisible('advSpeedUnit', dlMeasured);
   setText('uploadValue', ulFinal);
-  setText(
-    'uploadPeakMeta',
-    isNonNegativeNumber(ulInfo.peak) ? `Mbps · Pico ${ulInfo.peak.toFixed(1)}` : 'Mbps'
-  );
+  let uploadMetaText = 'Mbps';
+  if (isCommercial && isNonNegativeNumber(result.stats?.upload?.p50)) {
+    uploadMetaText = isNonNegativeNumber(ulInfo.peak)
+      ? `Mbps · P50 ${result.stats.upload.p50.toFixed(1)} · Pico ${ulInfo.peak.toFixed(1)}`
+      : `Mbps · P50 ${result.stats.upload.p50.toFixed(1)}`;
+  } else if (isNonNegativeNumber(ulInfo.peak)) {
+    uploadMetaText = `Mbps · Pico ${ulInfo.peak.toFixed(1)}`;
+  }
+  setText('uploadPeakMeta', uploadMetaText);
   setText('pingValue', pingFinal);
   setText('jitterValue', formatLatency(m.jitter.value, 1, m.jitter.status));
   setText('downloadLatencyValue', formatLatency(m.downloadLatency.value, 0, m.downloadLatency.status));

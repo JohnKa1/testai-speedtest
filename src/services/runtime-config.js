@@ -30,7 +30,7 @@ function readStreamCount(value, fallback) {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return fallback;
   const intVal = Math.floor(num);
-  return Math.max(1, Math.min(16, intVal));
+  return Math.max(1, Math.min(8, intVal));
 }
 
 /**

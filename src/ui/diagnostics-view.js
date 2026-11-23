@@ -185,8 +185,19 @@ export function renderTechnicalPanel(result) {
 
   const m = result.metrics;
   const s = result.stats;
-  const dlInfo = resolvePrimaryAndPeakSpeed(result.series?.downloadPoints, m.download, s.download);
-  const ulInfo = resolvePrimaryAndPeakSpeed(result.series?.uploadPoints, m.upload, s.upload);
+  const isCommercial = result.measurementMode === 'commercial';
+  const dlInfo = resolvePrimaryAndPeakSpeed(
+    result.series?.downloadPoints,
+    m.download,
+    s.download,
+    { measurementMode: result.measurementMode }
+  );
+  const ulInfo = resolvePrimaryAndPeakSpeed(
+    result.series?.uploadPoints,
+    m.upload,
+    s.upload,
+    { measurementMode: result.measurementMode }
+  );
 
   const formatDist = (statObj, decimals = 1) => {
     if (!statObj) return '—';
@@ -202,19 +213,41 @@ export function renderTechnicalPanel(result) {
 
   const rows = [
     {
-      name: 'Download (Média)',
+      name: isCommercial ? 'Download (P90 · Comercial)' : 'Download (Média)',
       value: formatMetricWithUnit(dlInfo.primary, 'Mbps', 2, dlInfo.status),
       samples: s.download?.count ?? 0,
       dist: formatDist(s.download, 1),
       status: statusLabels[dlInfo.status]
     },
+    ...(isCommercial
+      ? [
+          {
+            name: 'Download Sustentado (P50)',
+            value: formatMetricWithUnit(s.download?.p50 ?? dlInfo.sustained, 'Mbps', 2, dlInfo.status),
+            samples: s.download?.count ?? 0,
+            dist: formatDist(s.download, 1),
+            status: statusLabels[dlInfo.status]
+          }
+        ]
+      : []),
     {
-      name: 'Upload (Média)',
+      name: isCommercial ? 'Upload (P90 · Comercial)' : 'Upload (Média)',
       value: formatMetricWithUnit(ulInfo.primary, 'Mbps', 2, ulInfo.status),
       samples: s.upload?.count ?? 0,
       dist: formatDist(s.upload, 1),
       status: statusLabels[ulInfo.status]
     },
+    ...(isCommercial
+      ? [
+          {
+            name: 'Upload Sustentado (P50)',
+            value: formatMetricWithUnit(s.upload?.p50 ?? ulInfo.sustained, 'Mbps', 2, ulInfo.status),
+            samples: s.upload?.count ?? 0,
+            dist: formatDist(s.upload, 1),
+            status: statusLabels[ulInfo.status]
+          }
+        ]
+      : []),
     {
       name: 'Ping Ocioso (P50)',
       value: formatMetricWithUnit(m.ping.value, 'ms', 1, m.ping.status),
@@ -282,7 +315,16 @@ export function renderTechnicalPanel(result) {
     ['Dados Download', formatBytes(result.transfer.totalDownloadBytes)],
     ['Dados Upload', formatBytes(result.transfer.totalUploadBytes)],
     ['Perfil Executado', result.profile.label],
-    ['Meio Declarado', result.context.linkType]
+    ['Meio Declarado', result.context.linkType],
+    ...(isCommercial
+      ? [
+          ['Modo de Medição', 'Comercial (P90 · NAT Boost)'],
+          [
+            'Streams Paralelos',
+            `↓ ${result.parallelStreams?.download ?? '—'} · ↑ ${result.parallelStreams?.upload ?? '—'}`
+          ]
+        ]
+      : [])
   ];
 
   metaItems.forEach(([k, v]) => {
