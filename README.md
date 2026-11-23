@@ -168,5 +168,17 @@ node scripts/benchmark-profiles.mjs
 
 ---
 
+## 4. Hospedagem Própria para Provedores (Self-Hosted / White-Label)
+
+O TestAi também pode ser implantado **On-Net** diretamente na infraestrutura do provedor (ISP), mantendo 100% de compatibilidade com o build estático da Vercel (`public/config.json` com fallback automático para a Cloudflare):
+
+- **Micro-servidor 100% em RAM (`server/index.js`):** servidor HTTP nativo em Node.js com **zero dependências de runtime**, sem banco de dados e sem I/O em disco (streaming de buffer pré-alocado em memória e descarte imediato no upload).
+- **Empacotamento Docker & Nginx sem distorção (`Dockerfile`, `docker-compose.yml`):** sobe com um único comando configurando marca (`ISP_NAME`, `SERVER_LABEL`) via `.env` e mantendo `gzip off`, `proxy_buffering off` e `proxy_request_buffering off` nas rotas `/api/`.
+- **Modo Comercial compatível com NAT Boost (`MEASUREMENT_MODE=commercial`):** usa **P90** e múltiplas streams concorrentes no placar principal sem abrir mão de transparência — **P50 sustentado**, **pico**, **ping**, **jitter** e **latência sob carga ($\Delta$)** seguem preservados no Modo Avançado / NOC.
+
+Confira o passo a passo completo de implantação, regras de proxy reverso HTTPS, tuning BBR e checklist `curl` em [**`docs/hospedagem-provedor.md`**](./docs/hospedagem-provedor.md).
+
+---
+
 ## Licença
 Distribuído sob a licença MIT.
