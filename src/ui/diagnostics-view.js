@@ -213,7 +213,7 @@ export function renderTechnicalPanel(result) {
 
   const rows = [
     {
-      name: isCommercial ? 'Download (P90 · Comercial)' : 'Download (Média)',
+      name: isCommercial ? 'Download (P90 · Comercial)' : 'Download (P50 · Sustentado)',
       value: formatMetricWithUnit(dlInfo.primary, 'Mbps', 2, dlInfo.status),
       samples: s.download?.count ?? 0,
       dist: formatDist(s.download, 1),
@@ -231,7 +231,7 @@ export function renderTechnicalPanel(result) {
         ]
       : []),
     {
-      name: isCommercial ? 'Upload (P90 · Comercial)' : 'Upload (Média)',
+      name: isCommercial ? 'Upload (P90 · Comercial)' : 'Upload (P50 · Sustentado)',
       value: formatMetricWithUnit(ulInfo.primary, 'Mbps', 2, ulInfo.status),
       samples: s.upload?.count ?? 0,
       dist: formatDist(s.upload, 1),

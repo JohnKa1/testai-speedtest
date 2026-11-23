@@ -10,7 +10,8 @@ import {
   formatDeltaMs,
   formatDuration,
   formatLatency,
-  formatSpeed
+  formatSpeed,
+  getCanonicalSpeedMeta
 } from '../utils/formatters.js';
 
 const STORAGE_KEY = 'testai_history_v2';
@@ -181,12 +182,21 @@ export function exportHistoryCsv(records) {
  */
 export function buildTechnicalReportTxt(result, diagnosis, gaming, notes = '') {
   const m = result.metrics;
+  const speedMeta = getCanonicalSpeedMeta(result.measurementMode);
+  const dlLabel = `Download (${speedMeta.shortLabel})`.padEnd(22, ' ');
+  const ulLabel = `Upload (${speedMeta.shortLabel})`.padEnd(22, ' ');
   const dlP50Note = isNonNegativeNumber(result.stats?.download?.p50)
     ? ` · P50: ${result.stats.download.p50.toFixed(1)} Mbps`
     : '';
   const ulP50Note = isNonNegativeNumber(result.stats?.upload?.p50)
     ? ` · P50: ${result.stats.upload.p50.toFixed(1)} Mbps`
     : '';
+  const spikesNote =
+    result.loadedSpikes && result.loadedSpikes.status !== 'none' && result.loadedSpikes.peakMs !== null
+      ? [
+          `Picos sob Carga       : ${result.loadedSpikes.spikeCount}/${result.loadedSpikes.totalSamples} amostras (máx ${Math.round(result.loadedSpikes.peakMs)} ms no ${result.loadedSpikes.peakPhase})`
+        ]
+      : [];
 
   const lines = [
     '====================================================================',
@@ -205,14 +215,15 @@ export function buildTechnicalReportTxt(result, diagnosis, gaming, notes = '') {
     '--------------------------------------------------------------------',
     '1. MÉTRICAS CONSOLIDADAS',
     '--------------------------------------------------------------------',
-    `Download (Média)      : ${formatSpeed(m.download?.value, 1, m.download?.status)} Mbps${dlP50Note}`,
-    `Upload (Média)        : ${formatSpeed(m.upload?.value, 1, m.upload?.status)} Mbps${ulP50Note}`,
+    `${dlLabel}: ${formatSpeed(m.download?.value, 1, m.download?.status)} Mbps${dlP50Note}`,
+    `${ulLabel}: ${formatSpeed(m.upload?.value, 1, m.upload?.status)} Mbps${ulP50Note}`,
     `Latência Ociosa (P50) : ${formatLatency(m.ping?.value, 0, m.ping?.status)} ms`,
     `Jitter Ocioso         : ${formatLatency(m.jitter?.value, 1, m.jitter?.status)} ms`,
     `Latência sob Download : ${formatLatency(m.downloadLatency?.value, 0, m.downloadLatency?.status)} ms (${formatDeltaMs(m.downloadLatencyDelta?.value)})`,
     `Latência sob Upload   : ${formatLatency(m.uploadLatency?.value, 0, m.uploadLatency?.status)} ms (${formatDeltaMs(m.uploadLatencyDelta?.value)})`,
     `Jitter sob Download   : ${formatLatency(m.downloadJitter?.value, 1, m.downloadJitter?.status)} ms`,
     `Jitter sob Upload     : ${formatLatency(m.uploadJitter?.value, 1, m.uploadJitter?.status)} ms`,
+    ...spikesNote,
     '',
     '--------------------------------------------------------------------',
     '2. DIAGNÓSTICO INTELIGENTE',

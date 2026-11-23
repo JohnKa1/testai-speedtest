@@ -84,7 +84,22 @@
  *   downloadLatencyPoints: LatencySample[],
  *   uploadLatencyPoints: LatencySample[]
  * }} series
+ * @property {LoadedLatencySpikes} [loadedSpikes]
  * @property {Record<string, any> | null} rawSummary
+ */
+
+/**
+ * @typedef {Object} LoadedLatencySpikes
+ * @property {'none' | 'isolated' | 'recurrent'} status
+ * @property {number} thresholdDeltaMs
+ * @property {number} totalSamples
+ * @property {number} spikeCount
+ * @property {number} spikeRatio
+ * @property {number | null} peakMs
+ * @property {number | null} peakDeltaMs
+ * @property {'download' | 'upload' | null} peakPhase
+ * @property {number} downloadSpikeCount
+ * @property {number} uploadSpikeCount
  */
 
 /**
@@ -108,6 +123,7 @@
  * @property {string[]} userActions
  * @property {string} confirmatoryTest
  * @property {SecondaryFinding[]} secondaryFindings
+ * @property {LoadedLatencySpikes} [loadedSpikes]
  */
 
 /**

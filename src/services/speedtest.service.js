@@ -8,6 +8,7 @@
 
 import { TEST_PROFILES } from '../config/speedtest.config.js';
 import { DEFAULT_RUNTIME_CONFIG, getRuntimeConfig } from './runtime-config.js';
+import { analyzeLoadedLatencySpikes } from '../diagnostics/connection-diagnostics.js';
 import {
   checkBrowserCapabilities,
   clamp,
@@ -329,13 +330,7 @@ export function createRunAccumulator(options = {}) {
     if (bpsList.length === 0) return undefined;
     return computePercentile(bpsList, perc) ?? undefined;
   };
-  const calcBwMean = (pts) => {
-    const bpsList = pts.map((p) => p.bps).filter((v) => isPositiveNumber(v));
-    if (bpsList.length === 0) return undefined;
-    return bpsList.reduce((acc, v) => acc + v, 0) / bpsList.length;
-  };
-  const calcBwPrimary = (pts) =>
-    measurementMode === 'commercial' ? calcBwPercentile(pts, bandwidthPerc) : calcBwMean(pts);
+  const calcBwPrimary = (pts) => calcBwPercentile(pts, bandwidthPerc);
 
   return {
     state,
@@ -1502,6 +1497,16 @@ export class SpeedTestService {
     const measurementMode =
       profile?.options?.measurementMode === 'commercial' ? 'commercial' : 'sustained';
 
+    const consolidatedMetrics = {
+      ...snapshot.metrics,
+      downloadLatencyDelta: resolveMetric(downloadLatencyDelta, 'ms', false),
+      uploadLatencyDelta: resolveMetric(uploadLatencyDelta, 'ms', false)
+    };
+    const loadedSpikes = analyzeLoadedLatencySpikes({
+      metrics: consolidatedMetrics,
+      series: snapshot.series
+    });
+
     return {
       id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
@@ -1524,11 +1529,7 @@ export class SpeedTestService {
             : null,
         notes: typeof context.notes === 'string' ? context.notes.trim() : ''
       },
-      metrics: {
-        ...snapshot.metrics,
-        downloadLatencyDelta: resolveMetric(downloadLatencyDelta, 'ms', false),
-        uploadLatencyDelta: resolveMetric(uploadLatencyDelta, 'ms', false)
-      },
+      metrics: consolidatedMetrics,
       stats: {
         download: computeStats(dlPoints.map((p) => p.mbps)),
         upload: computeStats(ulPoints.map((p) => p.mbps)),
@@ -1542,6 +1543,7 @@ export class SpeedTestService {
         totalBytes: totalDownloadBytes + totalUploadBytes
       },
       series: snapshot.series,
+      loadedSpikes,
       rawSummary: summary
     };
   }

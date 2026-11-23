@@ -253,7 +253,38 @@ export function computeP90Mbps(points) {
 }
 
 /**
- * Resolve o valor principal (média sustentada ou P90 no modo comercial) e o pico secundário de velocidade.
+ * Retorna os metadados canônicos de estatística e rótulo conforme o modo ativo.
+ * Garante que o número principal e o rótulo exibidos no velocímetro, cards,
+ * veredito e exportações utilizem exatamente o mesmo critério.
+ *
+ * @param {'commercial' | 'sustained' | string | undefined} [measurementMode]
+ */
+export function getCanonicalSpeedMeta(measurementMode = 'sustained') {
+  if (measurementMode === 'commercial') {
+    return {
+      mode: /** @type {'commercial'} */ ('commercial'),
+      statKey: /** @type {'p90'} */ ('p90'),
+      shortLabel: 'P90',
+      downloadTitle: 'DOWNLOAD (P90)',
+      uploadTitle: 'Upload (P90)',
+      simpleHeroLabel: 'DOWNLOAD (P90)',
+      diagnosisLabel: 'P90 comercial'
+    };
+  }
+
+  return {
+    mode: /** @type {'sustained'} */ ('sustained'),
+    statKey: /** @type {'p50'} */ ('p50'),
+    shortLabel: 'P50',
+    downloadTitle: 'DOWNLOAD (P50)',
+    uploadTitle: 'Upload (P50)',
+    simpleHeroLabel: 'DOWNLOAD (P50)',
+    diagnosisLabel: 'P50 sustentado'
+  };
+}
+
+/**
+ * Resolve o valor principal (P50 sustentado ou P90 no modo comercial) e o pico secundário de velocidade.
  * Em falhas ou indisponibilidade preserva o status sem exibir unidade falsa.
  *
  * @param {any[]} points
@@ -307,16 +338,16 @@ export function resolvePrimaryAndPeakSpeed(points, metric, statsObj = null, opti
     };
   }
 
-  const meanFromSeries = computeMeanMbps(points);
-  const mean = isNonNegativeNumber(meanFromSeries)
-    ? meanFromSeries
-    : isNonNegativeNumber(statsObj?.mean)
-      ? statsObj.mean
+  const p50FromSeries = computeP50Mbps(points);
+  const sustainedP50 = isNonNegativeNumber(p50FromSeries)
+    ? p50FromSeries
+    : isNonNegativeNumber(statsObj?.p50)
+      ? statsObj.p50
       : null;
 
   if (metric?.status === METRIC_STATUS.MEASURED) {
-    const primary = isNonNegativeNumber(mean)
-      ? mean
+    const primary = isNonNegativeNumber(sustainedP50)
+      ? sustainedP50
       : isNonNegativeNumber(metric.value)
         ? metric.value
         : null;

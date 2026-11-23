@@ -62,6 +62,7 @@ import {
   formatLatency,
   formatMetricWithUnit,
   formatSpeed,
+  getCanonicalSpeedMeta,
   resolvePrimaryAndPeakSpeed,
   setText
 } from './utils/formatters.js';
@@ -507,6 +508,7 @@ function handleCompletedResult(result, isPartial = false) {
 
   const m = result.metrics;
   const isCommercial = result.measurementMode === 'commercial';
+  const speedMeta = getCanonicalSpeedMeta(result.measurementMode);
   const dlInfo = resolvePrimaryAndPeakSpeed(
     result.series.downloadPoints,
     m.download,
@@ -526,8 +528,8 @@ function handleCompletedResult(result, isPartial = false) {
   const ulFinal = formatSpeed(ulInfo.primary, 1, ulInfo.status);
   const pingFinal = formatLatency(m.ping.value, 0, m.ping.status);
 
-  // Atualiza Modo Simples (Média sustentada por padrão ou P90 no modo comercial)
-  setText('simpleHeroEyebrow', isCommercial ? 'DOWNLOAD' : 'DOWNLOAD MÉDIO');
+  // Atualiza Modo Simples (estatística canônica idêntica para Download e Upload)
+  setText('simpleHeroEyebrow', speedMeta.simpleHeroLabel);
   setText('simplePhaseLabel', isPartial ? 'Parcial' : 'Concluído');
   setText('simpleCurrentSpeed', dlFinal);
   setUnitVisible('simpleSpeedUnit', dlMeasured);
@@ -577,9 +579,10 @@ function handleCompletedResult(result, isPartial = false) {
   renderSimpleVerdict(diagnosis);
   renderCapabilitiesGrid(capabilities);
 
-  // Atualiza Modo Avançado (Média como principal ou P90 no modo comercial, com Pico/P50 transparentes)
+  // Atualiza Modo Avançado (estatística canônica idêntica no destaque, com Pico/P50 secundários)
   setText('phaseLabel', isPartial ? 'Parcial' : 'Concluído');
-  setText('liveMetricTitle', isCommercial ? 'DOWNLOAD (P90)' : 'DOWNLOAD (MÉDIA)');
+  setText('liveMetricTitle', speedMeta.downloadTitle);
+  setText('uploadMetricLabel', speedMeta.uploadTitle);
   setText('currentSpeed', dlFinal);
   setUnitVisible('advSpeedUnit', dlMeasured);
   setText('uploadValue', ulFinal);

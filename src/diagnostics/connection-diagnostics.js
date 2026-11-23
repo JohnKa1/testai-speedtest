@@ -11,8 +11,115 @@ import {
   formatDeltaMs,
   formatLatency,
   formatMetricWithUnit,
-  formatSpeed
+  formatSpeed,
+  getCanonicalSpeedMeta
 } from '../utils/formatters.js';
+
+/**
+ * Analisa amostras individuais de latência sob carga (download e upload) para
+ * detectar picos isolados ou recorrentes mesmo quando a mediana P50 parece limpa.
+ *
+ * @param {{
+ *   metrics?: Partial<import('../types.js').SpeedTestMetrics>,
+ *   series?: Partial<import('../types.js').SpeedTestResult['series']>
+ * }} result
+ * @param {{
+ *   spikeDeltaThresholdMs?: number,
+ *   recurrentCountMin?: number,
+ *   recurrentRatioMin?: number
+ * }} [options]
+ * @returns {import('../types.js').LoadedLatencySpikes}
+ */
+export function analyzeLoadedLatencySpikes(result, options = {}) {
+  const spikeDeltaThresholdMs = options.spikeDeltaThresholdMs ?? 80;
+  const recurrentCountMin = options.recurrentCountMin ?? 3;
+  const recurrentRatioMin = options.recurrentRatioMin ?? 0.25;
+
+  const idlePing =
+    result?.metrics?.ping?.status === METRIC_STATUS.MEASURED &&
+    isNonNegativeNumber(result.metrics.ping.value)
+      ? result.metrics.ping.value
+      : null;
+
+  const dlRaw = Array.isArray(result?.series?.downloadLatencyPoints)
+    ? result.series.downloadLatencyPoints
+    : [];
+  const ulRaw = Array.isArray(result?.series?.uploadLatencyPoints)
+    ? result.series.uploadLatencyPoints
+    : [];
+
+  const extractSamples = (arr, phase) =>
+    arr
+      .map((pt) => (typeof pt === 'number' ? pt : pt?.ms))
+      .filter((ms) => isNonNegativeNumber(ms))
+      .map((ms) => ({ ms, phase }));
+
+  const allSamples = [
+    ...extractSamples(dlRaw, /** @type {'download'} */ ('download')),
+    ...extractSamples(ulRaw, /** @type {'upload'} */ ('upload'))
+  ];
+
+  if (idlePing === null || allSamples.length === 0) {
+    return {
+      status: 'none',
+      thresholdDeltaMs: spikeDeltaThresholdMs,
+      totalSamples: allSamples.length,
+      spikeCount: 0,
+      spikeRatio: 0,
+      peakMs: null,
+      peakDeltaMs: null,
+      peakPhase: null,
+      downloadSpikeCount: 0,
+      uploadSpikeCount: 0
+    };
+  }
+
+  const spikeCutoffMs = idlePing + spikeDeltaThresholdMs;
+  let downloadSpikeCount = 0;
+  let uploadSpikeCount = 0;
+  let peakMs = null;
+  let peakDeltaMs = null;
+  /** @type {'download' | 'upload' | null} */
+  let peakPhase = null;
+
+  for (const sample of allSamples) {
+    if (sample.ms >= spikeCutoffMs) {
+      if (sample.phase === 'download') downloadSpikeCount += 1;
+      else uploadSpikeCount += 1;
+
+      if (peakMs === null || sample.ms > peakMs) {
+        peakMs = Math.round(sample.ms * 10) / 10;
+        peakDeltaMs = Math.round(Math.max(0, sample.ms - idlePing) * 10) / 10;
+        peakPhase = sample.phase;
+      }
+    }
+  }
+
+  const spikeCount = downloadSpikeCount + uploadSpikeCount;
+  const totalSamples = allSamples.length;
+  const spikeRatio = totalSamples > 0 ? spikeCount / totalSamples : 0;
+
+  /** @type {'none' | 'isolated' | 'recurrent'} */
+  let status = 'none';
+  if (spikeCount >= recurrentCountMin || (spikeCount > 0 && spikeRatio >= recurrentRatioMin)) {
+    status = 'recurrent';
+  } else if (spikeCount >= 1) {
+    status = 'isolated';
+  }
+
+  return {
+    status,
+    thresholdDeltaMs: spikeDeltaThresholdMs,
+    totalSamples,
+    spikeCount,
+    spikeRatio,
+    peakMs,
+    peakDeltaMs,
+    peakPhase,
+    downloadSpikeCount,
+    uploadSpikeCount
+  };
+}
 
 export const DIAGNOSIS_CATALOG = Object.freeze({
   EXCELLENT: 'excellent',
@@ -66,6 +173,8 @@ export function evaluateConnection(result, customThresholds = {}) {
   const dl = m.download?.status === METRIC_STATUS.MEASURED ? m.download.value : null;
   const ul = m.upload?.status === METRIC_STATUS.MEASURED ? m.upload.value : null;
   const ping = m.ping?.status === METRIC_STATUS.MEASURED ? m.ping.value : null;
+  const speedMeta = getCanonicalSpeedMeta(result?.measurementMode);
+  const loadedSpikes = result?.loadedSpikes || analyzeLoadedLatencySpikes(result);
   const jitter = m.jitter?.status === METRIC_STATUS.MEASURED ? m.jitter.value : null;
   const dlLat =
     m.downloadLatency?.status === METRIC_STATUS.MEASURED ? m.downloadLatency.value : null;
@@ -267,7 +376,34 @@ export function evaluateConnection(result, customThresholds = {}) {
     });
   }
 
-  if (hasHighIdlePing) {
+    if (!hasSevereLoadedLatency && loadedSpikes.status === 'recurrent' && loadedSpikes.peakMs !== null) {
+      findings.push({
+        code: DIAGNOSIS_CATALOG.POSSIBLE_CONGESTION,
+        severity: 'warning',
+        priority: 85,
+        title: 'Instabilidade de latência sob carga (picos recorrentes)',
+        summary: `Apesar da mediana sob carga controlada (${formatDeltaMs(dlDelta)} ↓ / ${formatDeltaMs(ulDelta)} ↑), ${loadedSpikes.spikeCount} de ${loadedSpikes.totalSamples} amostras apresentaram picos de até ${Math.round(loadedSpikes.peakMs)} ms durante o ${loadedSpikes.peakPhase}.`,
+        observed: `${loadedSpikes.spikeCount} amostras acima do patamar de pico (+${loadedSpikes.thresholdDeltaMs} ms), atingindo ${Math.round(loadedSpikes.peakMs)} ms no ${loadedSpikes.peakPhase}.`,
+        basisMetrics: [
+          `Ping ocioso: ${formatLatency(ping)} ms`,
+          `Pico sob carga (${loadedSpikes.peakPhase}): ${Math.round(loadedSpikes.peakMs)} ms`,
+          `Picos recorrentes: ${loadedSpikes.spikeCount}/${loadedSpikes.totalSamples} amostras`
+        ],
+        meaning:
+          'Picos intermitentes durante tráfego intenso causam engasgos momentâneos (spikes) em jogos competitivos e micro-cortes em chamadas de vídeo, mesmo quando a mediana parece baixa.',
+        probableCauses: [
+          'Hipótese: enfileiramento pontual de pacotes (micro-bufferbloat) em rajadas de envio/recepção sem controle SQM.',
+          'Hipótese: contenção temporária de meio Wi-Fi ou interferência intermitente.'
+        ],
+        userActions: [
+          'Se utilizar Wi-Fi para jogos ou reuniões, teste via cabo Ethernet ou ative QoS/SQM no roteador.'
+        ],
+        confirmatoryTest:
+          'Executar o perfil Estabilidade Prolongada via cabo para observar se os picos sob carga desaparecem.'
+      });
+    }
+
+    if (hasHighIdlePing) {
     findings.push({
       code: DIAGNOSIS_CATALOG.HIGH_LATENCY,
       severity: ping > t.idlePingElevatedMax ? 'danger' : 'warning',
@@ -332,7 +468,7 @@ export function evaluateConnection(result, customThresholds = {}) {
       summary: `Os blocos sustentados de download oscilaram significativamente (mín. ${formatSpeed(sustainedDlStats?.min)} Mbps, mediana ${formatSpeed(dl)} Mbps, média ${formatSpeed(sustainedDlStats?.mean)} Mbps).`,
       observed: `Coeficiente de variação de ${(dlCv * 100).toFixed(0)}% nos blocos de carga sustentada e jitter sob download de ${formatLatency(dlJitter, 1)} ms.`,
       basisMetrics: [
-        `Download (Mediana): ${formatSpeed(dl)} Mbps (média sustentada: ${formatSpeed(sustainedDlStats?.mean)} Mbps)`,
+        `Download (${speedMeta.shortLabel}): ${formatSpeed(dl)} Mbps (média sustentada: ${formatSpeed(sustainedDlStats?.mean)} Mbps)`,
         `Jitter sob download: ${formatLatency(dlJitter, 1)} ms`
       ],
       meaning:
@@ -360,7 +496,7 @@ export function evaluateConnection(result, customThresholds = {}) {
       summary: `A taxa de envio deste dispositivo/rede local para a internet oscilou significativamente entre os blocos (mín. ${formatSpeed(sustainedUlStats?.min)} Mbps, mediana ${formatSpeed(ul)} Mbps, média ${formatSpeed(sustainedUlStats?.mean)} Mbps).`,
       observed: `Coeficiente de variação de ${(ulCv * 100).toFixed(0)}% nos blocos sustentados de upload e jitter sob upload de ${formatLatency(ulJitter, 1)} ms.`,
       basisMetrics: [
-        `Upload (Mediana): ${formatSpeed(ul)} Mbps (média sustentada: ${formatSpeed(sustainedUlStats?.mean)} Mbps)`,
+        `Upload (${speedMeta.shortLabel}): ${formatSpeed(ul)} Mbps (média sustentada: ${formatSpeed(sustainedUlStats?.mean)} Mbps)`,
         `Jitter sob upload: ${formatLatency(ulJitter, 1)} ms`
       ],
       meaning:
@@ -436,10 +572,10 @@ export function evaluateConnection(result, customThresholds = {}) {
       summary: onlyUploadLimited
         ? `O download registrou ${formatSpeed(dl)} Mbps, mas a taxa de envio deste dispositivo/rede local para a internet ficou limitada em ${formatSpeed(ul)} Mbps.`
         : `A vazão medida registrou ${formatSpeed(dl)} Mbps de download${contractedText} e ${formatSpeed(ul)} Mbps de upload.`,
-      observed: `Download (Mediana) em ${formatSpeed(dl)} Mbps (média ${formatSpeed(dlAvg)} Mbps) e Upload (Mediana) em ${formatSpeed(ul)} Mbps.`,
+      observed: `Download (${speedMeta.shortLabel}) em ${formatSpeed(dl)} Mbps (média ${formatSpeed(dlAvg)} Mbps) e Upload (${speedMeta.shortLabel}) em ${formatSpeed(ul)} Mbps.`,
       basisMetrics: [
-        `Download (Mediana): ${formatSpeed(dl)} Mbps (média ${formatSpeed(dlAvg)} Mbps)`,
-        `Upload (Mediana): ${formatSpeed(ul)} Mbps`,
+        `Download (${speedMeta.shortLabel}): ${formatSpeed(dl)} Mbps (média ${formatSpeed(dlAvg)} Mbps)`,
+        `Upload (${speedMeta.shortLabel}): ${formatSpeed(ul)} Mbps`,
         ...(contractedRatio !== null
           ? [`Relação com plano declarado (${ctx.contractedMbps} Mbps): ${(contractedRatio * 100).toFixed(0)}%`]
           : [])
@@ -484,15 +620,23 @@ export function evaluateConnection(result, customThresholds = {}) {
       (jitter === null || jitter <= t.jitterGoodMax) &&
       maxLoadedDelta <= t.loadedDeltaGoodMax;
 
+    const hasIsolatedSpike =
+      loadedSpikes.status === 'isolated' && loadedSpikes.peakMs !== null;
+    const isolatedNote = hasIsolatedSpike
+      ? `, com pico isolado de ${Math.round(loadedSpikes.peakMs)} ms durante o ${loadedSpikes.peakPhase}`
+      : '';
+
     if (isExcellent) {
       return buildResult({
         code: DIAGNOSIS_CATALOG.EXCELLENT,
         severity: 'good',
         title: 'Excelente desempenho e estabilidade sob carga',
-        summary: `A conexão entregou ${formatSpeed(dl)} Mbps de download e ${formatSpeed(ul)} Mbps de upload com baixa latência ociosa (${formatLatency(ping)} ms) e mínima variação sob saturação (${formatDeltaMs(dlDelta)} ↓ / ${formatDeltaMs(ulDelta)} ↑).`,
-        observed: `Vazão sustentada (${formatSpeed(dl)} ↓ / ${formatSpeed(ul)} ↑ Mbps), jitter ocioso de ${formatLatency(jitter, 1)} ms e filas bem controladas durante carga máxima.`,
+        summary: hasIsolatedSpike
+          ? `A conexão entregou ${formatSpeed(dl)} Mbps de download (${speedMeta.shortLabel}) e ${formatSpeed(ul)} Mbps de upload (${speedMeta.shortLabel}) com baixa latência ociosa (${formatLatency(ping)} ms) e variação mediana controlada sob carga (${formatDeltaMs(dlDelta)} ↓ / ${formatDeltaMs(ulDelta)} ↑)${isolatedNote}.`
+          : `A conexão entregou ${formatSpeed(dl)} Mbps de download (${speedMeta.shortLabel}) e ${formatSpeed(ul)} Mbps de upload (${speedMeta.shortLabel}) com baixa latência ociosa (${formatLatency(ping)} ms) e mínima variação sob saturação (${formatDeltaMs(dlDelta)} ↓ / ${formatDeltaMs(ulDelta)} ↑).`,
+        observed: `Vazão (${speedMeta.diagnosisLabel}: ${formatSpeed(dl)} ↓ / ${formatSpeed(ul)} ↑ Mbps), jitter ocioso de ${formatLatency(jitter, 1)} ms e filas bem controladas durante carga máxima${isolatedNote}.`,
         basisMetrics: [
-          `Download (Mediana): ${formatSpeed(dl)} Mbps · Upload (Mediana): ${formatSpeed(ul)} Mbps`,
+          `Download (${speedMeta.shortLabel}): ${formatSpeed(dl)} Mbps · Upload (${speedMeta.shortLabel}): ${formatSpeed(ul)} Mbps`,
           `Ping ocioso: ${formatLatency(ping)} ms · Jitter: ${formatLatency(jitter, 1)} ms`,
           `Δ Latência sob carga: ${formatDeltaMs(dlDelta)} (↓) / ${formatDeltaMs(ulDelta)} (↑)`
         ],
@@ -507,7 +651,8 @@ export function evaluateConnection(result, customThresholds = {}) {
         ],
         confirmatoryTest:
           'Opcional: repetir a medição em horário de pico noturno (20h–23h) para confirmar se o provedor mantém a mesma estabilidade.',
-        secondaryFindings: []
+        secondaryFindings: [],
+        loadedSpikes
       });
     }
 
@@ -515,10 +660,10 @@ export function evaluateConnection(result, customThresholds = {}) {
       code: DIAGNOSIS_CATALOG.GOOD,
       severity: 'good',
       title: 'Boa conexão dentro dos parâmetros esperados',
-      summary: `Desempenho equilibrado com ${formatSpeed(dl)} Mbps de download, ${formatSpeed(ul)} Mbps de upload, ping ocioso de ${formatLatency(ping)} ms e variação controlada sob carga.`,
-      observed: `Métricas de vazão, latência ociosa (${formatLatency(ping)} ms) e latência carregada (${formatLatency(dlLat)} ms ↓ / ${formatLatency(ulLat)} ms ↑) dentro de faixas saudáveis.`,
+      summary: `Desempenho equilibrado com ${formatSpeed(dl)} Mbps de download (${speedMeta.shortLabel}), ${formatSpeed(ul)} Mbps de upload (${speedMeta.shortLabel}), ping ocioso de ${formatLatency(ping)} ms e variação controlada sob carga${isolatedNote}.`,
+      observed: `Métricas de vazão (${speedMeta.diagnosisLabel}), latência ociosa (${formatLatency(ping)} ms) e latência carregada (${formatLatency(dlLat)} ms ↓ / ${formatLatency(ulLat)} ms ↑) dentro de faixas saudáveis${isolatedNote}.`,
       basisMetrics: [
-        `Download (Mediana): ${formatSpeed(dl)} Mbps · Upload (Mediana): ${formatSpeed(ul)} Mbps`,
+        `Download (${speedMeta.shortLabel}): ${formatSpeed(dl)} Mbps · Upload (${speedMeta.shortLabel}): ${formatSpeed(ul)} Mbps`,
         `Ping ocioso: ${formatLatency(ping)} ms · Jitter: ${formatLatency(jitter, 1)} ms`,
         `Δ Latência sob carga: ${formatDeltaMs(dlDelta)} (↓) / ${formatDeltaMs(ulDelta)} (↑)`
       ],
@@ -532,7 +677,8 @@ export function evaluateConnection(result, customThresholds = {}) {
       ],
       confirmatoryTest:
         'Executar o perfil Alta Capacidade caso possua plano igual ou superior a 1 Gbps para validar saturação máxima.',
-      secondaryFindings: []
+      secondaryFindings: [],
+      loadedSpikes
     });
   }
 
@@ -547,7 +693,8 @@ export function evaluateConnection(result, customThresholds = {}) {
 
   return buildResult({
     ...primary,
-    secondaryFindings
+    secondaryFindings,
+    loadedSpikes
   });
 }
 
@@ -563,6 +710,7 @@ function buildResult(payload) {
     probableCauses: payload.probableCauses || [],
     userActions: payload.userActions || [],
     confirmatoryTest: payload.confirmatoryTest,
-    secondaryFindings: payload.secondaryFindings || []
+    secondaryFindings: payload.secondaryFindings || [],
+    ...(payload.loadedSpikes ? { loadedSpikes: payload.loadedSpikes } : {})
   };
 }

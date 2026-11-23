@@ -5,6 +5,7 @@
 
 import { isNonNegativeNumber, METRIC_STATUS } from '../utils/validators.js';
 import { formatLatency, formatSpeed } from '../utils/formatters.js';
+import { analyzeLoadedLatencySpikes } from './connection-diagnostics.js';
 
 export function normalizeSpecText(text) {
   return String(text ?? '')
@@ -507,6 +508,23 @@ export function evaluateSimpleStability(result, isPartial = false) {
       label: 'Moderada',
       sub: `+${Math.round(maxDelta)} ms sob carga`,
       tone: 'warning'
+    };
+  }
+
+  const loadedSpikes = result?.loadedSpikes || analyzeLoadedLatencySpikes(result);
+  if (loadedSpikes.status === 'recurrent' && loadedSpikes.peakMs !== null) {
+    return {
+      label: 'Moderada',
+      sub: `Picos até ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase})`,
+      tone: 'warning'
+    };
+  }
+
+  if (loadedSpikes.status === 'isolated' && loadedSpikes.peakMs !== null) {
+    return {
+      label: 'Excelente',
+      sub: `Pico isolado ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase})`,
+      tone: 'good'
     };
   }
 

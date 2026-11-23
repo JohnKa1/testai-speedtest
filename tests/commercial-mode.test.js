@@ -353,10 +353,10 @@ describe('TestAi — Motor Comercial: NAT Boost / P90 e Multi-stream (Etapa 2)',
       assert.deepEqual(result.parallelStreams, { download: 2, upload: 2 });
       assert.ok(result.stats.download && result.stats.download.count >= 4);
       assert.ok(
-        Math.abs(result.metrics.download.value - result.stats.download.mean) < 1e-6,
-        `Modo sustentado deve preservar média (${result.stats.download.mean}), obteve ${result.metrics.download.value}`
+        Math.abs(result.metrics.download.value - result.stats.download.p50) < 1e-6,
+        `Modo sustentado deve usar P50 (${result.stats.download.p50}), obteve ${result.metrics.download.value}`
       );
-      assert.ok(Math.abs(result.metrics.upload.value - result.stats.upload.mean) < 1e-6);
+      assert.ok(Math.abs(result.metrics.upload.value - result.stats.upload.p50) < 1e-6);
       assert.ok(result.stats.download.p50 > 0);
       assert.ok(result.metrics.download.value <= result.stats.download.p90 + 1e-6);
     } finally {
