@@ -32,51 +32,24 @@ export function getBrandSearchName(brandId) {
     : '';
 }
 
-function buildGoogleFallbackLinkNode(url) {
-  const link = /** @type {HTMLAnchorElement} */ (
-    createEl('a', 'device-fallback-link is-secondary-action')
-  );
-  link.setAttribute('target', '_blank');
-  link.setAttribute('rel', 'noopener noreferrer');
-  link.setAttribute('href', url);
-  link.setAttribute('aria-disabled', 'false');
-  link.appendChild(
-    document.createTextNode('Seu dispositivo não aparece? Pesquisar no Google ')
-  );
-  const arrow = createEl('span', '', '↗');
-  arrow.setAttribute('aria-hidden', 'true');
-  const sr = createEl('span', 'sr-only', '(abre em nova aba)');
-  link.appendChild(arrow);
-  link.appendChild(sr);
-  return link;
-}
-
 /**
  * @param {import('../types.js').SemanticTone | string} tone
  * @param {string} text
- * @param {{ googleUrl?: string | null }} [options]
  */
-export function showDeviceFeedback(tone, text, options = {}) {
+export function showDeviceFeedback(tone, text) {
   const el = document.getElementById('deviceFeedback');
   if (!el) return;
   el.className = `device-feedback tone-${tone}`;
   clearElement(el);
-
-  if (options?.googleUrl) {
-    const msgP = createEl('p', 'device-feedback-text');
-    msgP.textContent = text;
-    el.appendChild(msgP);
-    el.appendChild(buildGoogleFallbackLinkNode(options.googleUrl));
-  } else {
-    el.textContent = text;
-  }
-
+  el.textContent = text;
   el.classList.remove('hidden');
 }
 
 export function hideDeviceFeedback() {
   const el = document.getElementById('deviceFeedback');
   if (el) el.classList.add('hidden');
+  const linkEl = document.getElementById('deviceGoogleLink');
+  if (linkEl) linkEl.classList.remove('is-secondary-action');
 }
 
 /**
@@ -629,17 +602,16 @@ export function createDevicePanelController({ deviceService, state }) {
       return;
     }
 
-    const googleUrl = syncGoogleFallbackLink(trimmed, { highlightAsAction: true });
+    syncGoogleFallbackLink(trimmed, { highlightAsAction: true });
 
     if (lookup.status === 'error') {
-      showDeviceFeedback('danger', 'Não foi possível consultar agora.', { googleUrl });
+      showDeviceFeedback('danger', 'Não foi possível consultar agora.');
       return;
     }
 
     showDeviceFeedback(
       'warning',
-      `Não encontramos “${trimmed}” nas fontes consultadas.`,
-      { googleUrl }
+      `Não encontramos “${trimmed}” nas fontes consultadas.`
     );
   }
 

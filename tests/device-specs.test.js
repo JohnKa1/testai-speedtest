@@ -825,37 +825,58 @@ describe('TestAi — Inteligência de Dispositivos (Wikipedia + Google Play)', (
       assert.ok(outrasHref);
       assert.equal(new URL(outrasHref).searchParams.get('q'), 'Aparelho Raro X1 especificações Wi-Fi');
 
-      // 3. Estado not-found (E21): exibe "Não encontramos “{texto}” nas fontes consultadas." + link em destaque
+      // 3. Estado not-found (E21, E22, E26-B): exibe apenas texto puro em #deviceFeedback (sem <a> clonado) e destaca #deviceGoogleLink
       await controller.handleDeviceLookup('Aparelho Raro X1', { brandId: 'outras' });
       assert.equal(byId.deviceFeedback.classList.contains('hidden'), false);
-      assert.equal(byId.deviceFeedback.children.length, 2);
+      assert.equal(byId.deviceFeedback.children.length, 0);
       assert.equal(
-        byId.deviceFeedback.children[0].textContent,
+        byId.deviceFeedback.textContent,
         'Não encontramos “Aparelho Raro X1” nas fontes consultadas.'
       );
-      assert.equal(byId.deviceFeedback.children[1].tagName, 'A');
-      assert.equal(byId.deviceFeedback.children[1].getAttribute('href'), outrasHref);
+      assert.equal(byId.deviceGoogleLink.getAttribute('href'), outrasHref);
       assert.equal(byId.deviceGoogleLink.classList.contains('is-secondary-action'), true);
 
-      // 4. Estado error de rede (E21): exibe "Não foi possível consultar agora." + link (nunca texto de not-found)
+      // E22: texto com tags HTML entra literal via textContent sem criar elementos internos
+      await controller.handleDeviceLookup('<script>alert(1)</script>', { brandId: 'outras' });
+      assert.equal(byId.deviceFeedback.children.length, 0);
+      assert.equal(
+        byId.deviceFeedback.textContent,
+        'Não encontramos “<script>alert(1)</script>” nas fontes consultadas.'
+      );
+      assert.equal(byId.deviceGoogleLink.classList.contains('is-secondary-action'), true);
+
+      // E26-B: ao digitar novamente, o destaque .is-secondary-action é removido de #deviceGoogleLink
+      byId.deviceQueryInput.value = 'Zenfone 10';
+      byId.deviceQueryInput.dispatch('input');
+      assert.equal(byId.deviceGoogleLink.classList.contains('is-secondary-action'), false);
+
+      // 4. Estado error de rede (E21, E26-B): exibe "Não foi possível consultar agora." (texto puro) + #deviceGoogleLink destacado
       const prevFetchImpl = service.fetchImpl;
       service.fetchImpl = null;
       await controller.handleDeviceLookup('Modelo Sob Falha Rede', { brandId: 'xiaomi' });
       service.fetchImpl = prevFetchImpl;
-      assert.equal(byId.deviceFeedback.children.length, 2);
+      assert.equal(byId.deviceFeedback.children.length, 0);
       assert.equal(
-        byId.deviceFeedback.children[0].textContent,
+        byId.deviceFeedback.textContent,
         'Não foi possível consultar agora.'
       );
+      assert.equal(byId.deviceGoogleLink.classList.contains('is-secondary-action'), true);
       assert.equal(
-        new URL(byId.deviceFeedback.children[1].getAttribute('href')).searchParams.get('q'),
+        new URL(byId.deviceGoogleLink.getAttribute('href')).searchParams.get('q'),
         'Xiaomi Modelo Sob Falha Rede especificações Wi-Fi'
       );
 
-      // 5. Estado empty (E21): sem link no feedback e #deviceGoogleLink desabilitado sem href
+      // E26-B: ao trocar de marca, limpa .is-secondary-action, remove href e define aria-disabled="true"
+      controller.selectBrand('xiaomi');
+      assert.equal(byId.deviceGoogleLink.classList.contains('is-secondary-action'), false);
+      assert.equal(byId.deviceGoogleLink.getAttribute('href'), null);
+      assert.equal(byId.deviceGoogleLink.getAttribute('aria-disabled'), 'true');
+
+      // 5. Estado empty (E21, E26-B): sem link no feedback e #deviceGoogleLink desabilitado sem href e sem destaque
       await controller.handleDeviceLookup('   ', { brandId: 'xiaomi' });
       assert.equal(byId.deviceFeedback.children.length, 0);
       assert.ok(byId.deviceFeedback.textContent.length > 0);
+      assert.equal(byId.deviceGoogleLink.classList.contains('is-secondary-action'), false);
       assert.equal(byId.deviceGoogleLink.getAttribute('href'), null);
       assert.equal(byId.deviceGoogleLink.getAttribute('aria-disabled'), 'true');
     } finally {

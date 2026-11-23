@@ -278,14 +278,6 @@
   color: var(--text-3);
 }
 
-.device-feedback-text {
-  margin: 0;
-}
-
-.device-feedback .device-fallback-link.is-secondary-action {
-  margin-top: var(--sp-2);
-}
-
 .device-chips {
   display: flex;
   flex-wrap: wrap;
