@@ -1,0 +1,23 @@
+{$DOMAIN:localhost} {
+  # Bloqueia /metrics na borda pública; Prometheus coleta internamente via http://api:3001/metrics
+  handle /metrics {
+    respond "Forbidden" 403
+  }
+
+  # Rotas de medição e Looking Glass: zero compressão e zero buffering para preservar precisão
+  handle /api/* {
+    reverse_proxy api:3001 {
+      flush_interval -1
+      header_up Host {host}
+      header_up X-Real-IP {remote_host}
+      header_up X-Forwarded-For {remote_host}
+      header_up X-Forwarded-Proto {scheme}
+    }
+  }
+
+  # Frontend estático (SPA + /config.json sem cache configurado no Nginx)
+  handle {
+    encode zstd gzip
+    reverse_proxy web:80
+  }
+}

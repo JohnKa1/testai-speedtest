@@ -173,3 +173,37 @@ Substitua `http://localhost:8080` pelo seu domínio HTTPS de produção quando v
    curl -s http://localhost:8080/config.json
    ```
    Confirme `ispName`, `serverLabel`, `clientIp` no `/api/meta` e `measurementMode` / `endpoints` coerentes em `/config.json`.
+
+---
+
+## 8. HTTPS Automático com Caddy & Monitoramento Prometheus (`/metrics`)
+
+### HTTPS Automático via Overlay Caddy
+
+Para subir em produção já com **TLS/HTTPS automático via Let's Encrypt** (sem configurar Nginx/Certbot no host), defina `DOMAIN` no `.env` (com DNS `A`/`AAAA` apontando para o servidor e portas `80`/`443` liberadas) e utilize o arquivo overlay [`docker-compose.caddy.yml`](../docker-compose.caddy.yml):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+```
+
+- Os volumes persistentes `caddy_data` e `caddy_config` preservam os certificados SSL entre reinicializações.
+- O [`Caddyfile`](../Caddyfile) aplica `flush_interval -1` e mantém `/api/*` sem compressão para preservar a precisão das medições, além de bloquear `/metrics` na borda pública (`403`).
+
+### Coleta Prometheus e Grafana (`/metrics`)
+
+O backend `api` expõe métricas em formato texto Prometheus (`0.0.4`) na rota `GET /metrics` (`Cache-Control: no-store`), incluindo `testai_uptime_seconds`, `testai_process_resident_memory_bytes`, `testai_active_requests`, `testai_requests_total`, `testai_transfer_bytes_total` e `testai_looking_glass_probes_total`:
+
+- **Controle de acesso via `.env`:** defina `METRICS_TOKEN` para exigir `Authorization: Bearer <METRICS_TOKEN>`, ou `METRICS_ENABLED=false` para desativar o endpoint.
+- **Exemplo de job no `prometheus.yml`** (coletando internamente pela rede Docker, sem expor `/metrics` na internet):
+
+```yaml
+scrape_configs:
+  - job_name: "testai-api"
+    metrics_path: "/metrics"
+    scrape_interval: 15s
+    authorization:
+      type: "Bearer"
+      credentials: "SEU_METRICS_TOKEN_AQUI" # remova caso METRICS_TOKEN esteja vazio
+    static_configs:
+      - targets: ["api:3001"]
+```

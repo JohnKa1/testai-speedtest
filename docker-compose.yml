@@ -11,6 +11,8 @@ services:
       SERVER_LABEL: "${SERVER_LABEL:-On-Net Server}"
       ALLOWED_ORIGIN: "${ALLOWED_ORIGIN:-*}"
       MAX_DOWNLOAD_BYTES: "${MAX_DOWNLOAD_BYTES:-104857600}"
+      METRICS_ENABLED: "${METRICS_ENABLED:-true}"
+      METRICS_TOKEN: "${METRICS_TOKEN:-}"
 
   web:
     build:

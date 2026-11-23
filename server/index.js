@@ -16,6 +16,7 @@ import {
   probeTcpLatency,
   resolveSafeTarget
 } from './looking-glass.js';
+import { createMetricsRegistry, isValidMetricsAuth } from './metrics.js';
 
 const RAM_CHUNK_BYTES = 1024 * 1024; // 1 MiB pré-alocado no boot
 const DEFAULT_MAX_DOWNLOAD_BYTES = 104_857_600; // 100 MB
@@ -112,6 +113,18 @@ function readJsonBody(req, maxBytes = DEFAULT_LOOKING_GLASS_BODY_BYTES) {
   });
 }
 
+function resolveMetricRoute(pathname, method) {
+  if (method === 'OPTIONS') return 'options';
+  if (pathname === '/api/ping') return 'ping';
+  if (pathname === '/api/down') return 'download';
+  if (pathname === '/api/up') return 'upload';
+  if (pathname === '/api/meta') return 'meta';
+  if (pathname === '/api/looking-glass/presets') return 'looking_glass_presets';
+  if (pathname === '/api/looking-glass') return 'looking_glass';
+  if (pathname === '/metrics') return 'metrics';
+  return 'other';
+}
+
 /**
  * Cria o servidor HTTP nativo de medição para hospedagem self-hosted em ISPs.
  *
@@ -124,7 +137,10 @@ function readJsonBody(req, maxBytes = DEFAULT_LOOKING_GLASS_BODY_BYTES) {
  *   lookingGlassRateLimit?: number,
  *   lookingGlassWindowMs?: number,
  *   lookingGlassLookup?: (host: string, opts: any) => Promise<any>,
- *   lookingGlassProbe?: typeof probeTcpLatency
+ *   lookingGlassProbe?: typeof probeTcpLatency,
+ *   metricsEnabled?: boolean | string,
+ *   metricsToken?: string,
+ *   metricsRegistry?: ReturnType<typeof createMetricsRegistry>
  * }} [options]
  */
 export function createMeasurementServer(options = {}) {
@@ -155,6 +171,19 @@ export function createMeasurementServer(options = {}) {
     DEFAULT_MAX_UPLOAD_BYTES
   );
 
+  const rawMetricsEnabled = options.metricsEnabled ?? process.env.METRICS_ENABLED;
+  const metricsEnabled = !(
+    rawMetricsEnabled === false ||
+    String(rawMetricsEnabled ?? '').trim().toLowerCase() === 'false' ||
+    String(rawMetricsEnabled ?? '').trim() === '0'
+  );
+  const rawMetricsToken = options.metricsToken ?? process.env.METRICS_TOKEN;
+  const metricsToken =
+    typeof rawMetricsToken === 'string' && rawMetricsToken.trim()
+      ? rawMetricsToken.trim()
+      : '';
+  const metrics = options.metricsRegistry || createMetricsRegistry();
+
   const lookingGlassLimiter = createRateLimiter({
     maxRequests: parsePositiveInt(
       options.lookingGlassRateLimit ?? process.env.LOOKING_GLASS_RATE_LIMIT,
@@ -172,15 +201,34 @@ export function createMeasurementServer(options = {}) {
     'Cache-Control': 'no-store, no-cache, must-revalidate',
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
     'Access-Control-Max-Age': '86400',
     'Timing-Allow-Origin': allowedOrigin
   };
 
   return http.createServer((req, res) => {
     const method = (req.method || 'GET').toUpperCase();
+    let metricRoute = 'other';
+
+    res.once('finish', () => {
+      metrics.recordRequest(metricRoute, res.statusCode);
+    });
+
+    const trackActive = (routeName) => {
+      metrics.incActive(routeName);
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        metrics.decActive(routeName);
+      };
+      res.once('finish', release);
+      res.once('close', release);
+      return release;
+    };
 
     if (method === 'OPTIONS') {
+      metricRoute = 'options';
       res.writeHead(204, commonHeaders);
       res.end();
       return;
@@ -190,11 +238,40 @@ export function createMeasurementServer(options = {}) {
     try {
       parsedUrl = new URL(req.url || '/', 'http://localhost');
     } catch {
+      metricRoute = 'invalid';
       sendJson(res, 400, { ok: false, error: 'URL inválida.' }, commonHeaders);
       return;
     }
 
     const pathname = parsedUrl.pathname;
+    metricRoute = resolveMetricRoute(pathname, method);
+
+    if (pathname === '/metrics' && method === 'GET') {
+      if (!metricsEnabled) {
+        sendJson(res, 404, { ok: false, error: 'Métricas desabilitadas.' }, commonHeaders);
+        return;
+      }
+
+      if (metricsToken && !isValidMetricsAuth(req, metricsToken)) {
+        sendJson(
+          res,
+          401,
+          { ok: false, error: 'Autenticação Bearer inválida ou ausente.' },
+          commonHeaders,
+          { 'WWW-Authenticate': 'Bearer realm="testai-metrics"' }
+        );
+        return;
+      }
+
+      const body = metrics.renderPrometheus();
+      res.writeHead(200, {
+        ...commonHeaders,
+        'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
+        'Content-Length': String(Buffer.byteLength(body))
+      });
+      res.end(body);
+      return;
+    }
 
     if (pathname === '/api/ping' && (method === 'GET' || method === 'HEAD')) {
       res.writeHead(204, commonHeaders);
@@ -229,6 +306,7 @@ export function createMeasurementServer(options = {}) {
         return;
       }
 
+      trackActive('download');
       res.writeHead(200, {
         ...commonHeaders,
         'Content-Type': 'application/octet-stream',
@@ -256,6 +334,7 @@ export function createMeasurementServer(options = {}) {
           const chunk =
             remaining >= RAM_CHUNK_BYTES ? RAM_CHUNK : RAM_CHUNK.subarray(0, remaining);
           sent += chunk.length;
+          metrics.addTransferBytes('download', chunk.length);
           const canContinue = res.write(chunk);
           if (!canContinue && sent < totalBytes) {
             res.once('drain', writeNext);
@@ -274,6 +353,7 @@ export function createMeasurementServer(options = {}) {
     }
 
     if (pathname === '/api/up' && method === 'POST') {
+      trackActive('upload');
       let receivedBytes = 0;
       let exceeded = false;
       let responded = false;
@@ -298,6 +378,7 @@ export function createMeasurementServer(options = {}) {
       // Consome chunks em streaming sem armazenar nem concatenar payload em RAM
       req.on('data', (chunk) => {
         receivedBytes += chunk.length;
+        metrics.addTransferBytes('upload', chunk.length);
         if (!exceeded && receivedBytes > maxUploadBytes) {
           handleTooLarge();
         }
@@ -333,6 +414,7 @@ export function createMeasurementServer(options = {}) {
       const clientIp = resolveClientIp(req);
       const rateState = lookingGlassLimiter.check(clientIp);
       if (!rateState.allowed) {
+        metrics.recordLookingGlassOutcome('rate_limited');
         sendJson(
           res,
           429,
@@ -347,6 +429,7 @@ export function createMeasurementServer(options = {}) {
         return;
       }
 
+      const releaseLg = trackActive('looking_glass');
       readJsonBody(req, DEFAULT_LOOKING_GLASS_BODY_BYTES)
         .then(async (payload) => {
           const resolved = await resolveSafeTarget(payload, {
@@ -357,13 +440,19 @@ export function createMeasurementServer(options = {}) {
             timeoutMs: 2000,
             target: resolved.target
           });
+          metrics.recordLookingGlassOutcome('ok');
+          releaseLg();
           if (!res.writableEnded) {
             sendJson(res, 200, { ok: true, ...probeResult }, commonHeaders);
           }
         })
         .catch((err) => {
+          releaseLg();
           if (res.writableEnded) return;
           if (err instanceof LookingGlassError) {
+            metrics.recordLookingGlassOutcome(
+              err.code === 'SSRF_BLOCKED' || err.statusCode === 403 ? 'blocked' : 'error'
+            );
             const extraHeaders = err.statusCode === 413 ? { Connection: 'close' } : {};
             sendJson(
               res,
@@ -374,6 +463,7 @@ export function createMeasurementServer(options = {}) {
             );
             return;
           }
+          metrics.recordLookingGlassOutcome('error');
           sendJson(
             res,
             500,
