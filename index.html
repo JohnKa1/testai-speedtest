@@ -260,6 +260,22 @@
             <p class="diag-summary" id="simpleVerdictSummary">—</p>
           </article>
 
+          <!-- SELOS DE USO REAL E COMPARATIVO -->
+          <section
+            class="card glass usage-verdict-section hidden"
+            id="usageVerdictSection"
+            aria-label="Selos práticos de uso e comparativo"
+          >
+            <div class="section-heading">
+              <h2>Pronto para o seu dia a dia?</h2>
+              <p class="card-hint">
+                Avaliação objetiva para Jogos FPS, Videochamadas e Streaming 4K
+              </p>
+            </div>
+            <div class="usage-verdict-grid" id="usageVerdictGrid"></div>
+            <div class="comparison-delta-bar" id="comparisonDeltaBar"></div>
+          </section>
+
           <!-- CARDS INTELIGENTES: O QUE POSSO FAZER COM MINHA INTERNET? -->
           <section class="capabilities-section" aria-label="O que posso fazer com minha internet">
             <div class="section-heading">
@@ -314,6 +330,35 @@
                 </div>
               </article>
             </div>
+          </section>
+
+          <!-- HISTÓRICO RECENTE COMPARATIVO (ATÉ 10 TESTES) -->
+          <section
+            class="card glass recent-history-section"
+            id="recentHistorySection"
+            aria-label="Histórico recente de testes"
+          >
+            <div class="recent-history-header">
+              <div>
+                <h2>Histórico Recente</h2>
+                <p class="card-hint">Últimos 10 testes salvos localmente neste navegador.</p>
+              </div>
+              <div class="recent-history-actions">
+                <button type="button" class="btn-secondary" id="recentExportCsvBtn" disabled>
+                  Exportar CSV
+                </button>
+                <button type="button" class="btn-secondary" id="recentExportJsonBtn" disabled>
+                  Exportar JSON
+                </button>
+                <button type="button" class="btn-secondary" id="recentClearHistoryBtn" disabled>
+                  Limpar
+                </button>
+              </div>
+            </div>
+            <p class="empty-state-text" id="recentHistoryEmpty">
+              Nenhum teste salvo ainda. Conclua uma medição para comparar resultados.
+            </p>
+            <ul class="recent-history-list" id="recentHistoryList"></ul>
           </section>
         </section>
 

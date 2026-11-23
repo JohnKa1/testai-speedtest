@@ -13,6 +13,21 @@ import {
   setRuntimeConfig
 } from './services/runtime-config.js';
 import { shareTestResult } from './services/share-card.js';
+import {
+  buildHistoryEntry,
+  clearHistory as clearInsightsHistory,
+  computeComparisonDelta,
+  exportHistoryAsCsv,
+  exportHistoryAsJson,
+  loadHistoryEntries,
+  saveHistoryEntry
+} from './services/history.service.js';
+import { evaluateUsageProfiles } from './services/usage-verdict.js';
+import {
+  renderRecentHistoryPanel,
+  renderUsageVerdictsAndComparison,
+  resetUsageVerdictsUI
+} from './ui/insights-view.js';
 import { evaluateConnection } from './diagnostics/connection-diagnostics.js';
 import { evaluateGamingReadiness } from './diagnostics/gaming-analyzer.js';
 import {
@@ -93,6 +108,7 @@ const state = {
   lastGaming: null,
   selectedDevice: null,
   history: [],
+  recentHistory: [],
   selectedForCompare: [],
   latestSnapshot: null,
   displayLoopId: null,
@@ -268,6 +284,7 @@ const speedTestService = new SpeedTestService({
     renderCapabilitiesSkeleton({ busy: true });
     setRunningControls(true);
     setShareButtonVisible(false);
+    resetUsageVerdictsUI();
     hideStatusBanner();
     startDisplayLoop();
   },
@@ -295,6 +312,7 @@ const speedTestService = new SpeedTestService({
     setActiveMetricPhase(null);
     setRunningControls(false);
     setShareButtonVisible(false);
+    resetUsageVerdictsUI();
     setAllTelemetryEmpty(false);
     renderCapabilitiesSkeleton({ busy: false });
     updateSimpleGauge(0, 'idle');
@@ -327,6 +345,7 @@ const speedTestService = new SpeedTestService({
       handleCompletedResult(errorPayload.partialResult, true);
     } else {
       setShareButtonVisible(false);
+      resetUsageVerdictsUI();
       setAllTelemetryEmpty(false);
       renderCapabilitiesSkeleton({ busy: false });
       updateSimpleGauge(0, 'danger');
@@ -607,6 +626,15 @@ function handleCompletedResult(result, isPartial = false) {
   const record = toHistoryRecord(result, diagnosis, gaming);
   state.history = appendHistoryRecord(record);
   refreshHistoryView();
+
+  const previousEntry = state.recentHistory[0] || null;
+  const currentEntry = buildHistoryEntry(result, getRuntimeConfig());
+  const comparisonDelta = computeComparisonDelta(currentEntry, previousEntry);
+  state.recentHistory = saveHistoryEntry(currentEntry);
+  const usageVerdicts = evaluateUsageProfiles(result);
+  renderUsageVerdictsAndComparison(usageVerdicts, comparisonDelta);
+  renderRecentHistoryPanel(state.recentHistory);
+
   setShareButtonVisible(true);
 }
 
@@ -850,6 +878,30 @@ function initApp() {
     refreshHistoryView();
   });
 
+  document.getElementById('recentExportCsvBtn')?.addEventListener('click', () => {
+    if (!state.recentHistory.length) return;
+    downloadFile(
+      `testai-historico-${Date.now()}.csv`,
+      exportHistoryAsCsv(state.recentHistory),
+      'text/csv;charset=utf-8'
+    );
+  });
+
+  document.getElementById('recentExportJsonBtn')?.addEventListener('click', () => {
+    if (!state.recentHistory.length) return;
+    downloadFile(
+      `testai-historico-${Date.now()}.json`,
+      exportHistoryAsJson(state.recentHistory),
+      'application/json;charset=utf-8'
+    );
+  });
+
+  document.getElementById('recentClearHistoryBtn')?.addEventListener('click', () => {
+    state.recentHistory = clearInsightsHistory();
+    renderRecentHistoryPanel(state.recentHistory);
+    resetUsageVerdictsUI();
+  });
+
   setUiMode('simple');
   setupTabs();
   updateOnlineIndicator();
@@ -870,6 +922,13 @@ function initApp() {
     refreshHistoryView();
   } catch (err) {
     console.error('[TestAi] Falha ao carregar histórico local:', err);
+  }
+
+  try {
+    state.recentHistory = loadHistoryEntries();
+    renderRecentHistoryPanel(state.recentHistory);
+  } catch (err) {
+    console.error('[TestAi] Falha ao carregar histórico comparativo:', err);
   }
 }
 
