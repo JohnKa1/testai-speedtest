@@ -345,4 +345,64 @@ describe('TestAi — Integridade de UI, Contratos DOM e Tokens CSS', () => {
       globalThis.document = prevDocument;
     }
   });
+
+  it('pausa animação de .bg-layer durante a medição (body.is-measuring) e quando a aba fica oculta (body.is-page-hidden)', async () => {
+    const baseCss = fs.readFileSync(new URL('../src/styles/base.css', import.meta.url), 'utf8');
+    const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+
+    // 1. Verifica regras CSS de pausa em src/styles/base.css dentro de prefers-reduced-motion: no-preference
+    assert.ok(
+      baseCss.includes('body.is-measuring .bg-layer') &&
+        baseCss.includes('body.is-page-hidden .bg-layer') &&
+        baseCss.includes('animation-play-state: paused;'),
+      'base.css deve pausar .bg-layer quando body tiver .is-measuring ou .is-page-hidden'
+    );
+
+    // 2. Verifica sincronização de is-page-hidden com document.hidden em src/main.js
+    assert.ok(
+      mainJs.includes("classList?.toggle('is-page-hidden', Boolean(document.hidden))"),
+      'main.js deve sincronizar body.is-page-hidden com document.hidden'
+    );
+
+    // 3. Verifica que setRunningControls(true/false) adiciona e remove is-measuring em document.body
+    const prevDocument = globalThis.document;
+    const bodyClasses = new Set();
+
+    try {
+      globalThis.document = {
+        body: {
+          classList: {
+            toggle(cls, force) {
+              if (force) bodyClasses.add(cls);
+              else bodyClasses.delete(cls);
+            },
+            contains(cls) {
+              return bodyClasses.has(cls);
+            }
+          }
+        },
+        getElementById: () => null
+      };
+
+      const { setRunningControls } = await import(
+        `../src/ui/telemetry-view.js?measuringTest=${Date.now()}`
+      );
+
+      setRunningControls(true);
+      assert.equal(
+        globalThis.document.body.classList.contains('is-measuring'),
+        true,
+        'setRunningControls(true) deve adicionar is-measuring ao document.body'
+      );
+
+      setRunningControls(false);
+      assert.equal(
+        globalThis.document.body.classList.contains('is-measuring'),
+        false,
+        'setRunningControls(false) deve remover is-measuring do document.body'
+      );
+    } finally {
+      globalThis.document = prevDocument;
+    }
+  });
 });

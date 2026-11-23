@@ -641,7 +641,13 @@ function initApp() {
     }
   });
 
+  const syncPageHiddenState = () => {
+    document.body?.classList?.toggle('is-page-hidden', Boolean(document.hidden));
+  };
+  syncPageHiddenState();
+
   document.addEventListener('visibilitychange', () => {
+    syncPageHiddenState();
     if (!speedTestService.isRunning()) return;
     if (document.hidden) {
       state.backgroundedDuringRun = true;

@@ -206,6 +206,9 @@ export function resetTelemetryUI(profileLabel, thermometer) {
 }
 
 export function setRunningControls(isRunning) {
+  const active = Boolean(isRunning);
+  document.body?.classList?.toggle('is-measuring', active);
+
   const btnAdv = document.getElementById('startBtnAdv');
   const btnSimple = document.getElementById('startBtnSimple');
   const profileSel = /** @type {HTMLSelectElement | null} */ (
@@ -217,21 +220,21 @@ export function setRunningControls(isRunning) {
   const thermoFill = document.getElementById('thermoFill');
   const progressSection = document.getElementById('progressSection');
 
-  if (progressSection) progressSection.classList.toggle('is-running', isRunning);
-  if (panel) panel.setAttribute('aria-busy', String(isRunning));
-  if (profileSel) profileSel.disabled = isRunning;
+  if (progressSection) progressSection.classList.toggle('is-running', active);
+  if (panel) panel.setAttribute('aria-busy', String(active));
+  if (profileSel) profileSel.disabled = active;
 
-  phaseBadge?.classList.toggle('is-live', isRunning);
-  simplePhaseBadge?.classList.toggle('is-live', isRunning);
-  thermoFill?.classList.toggle('is-streaming', isRunning);
+  phaseBadge?.classList.toggle('is-live', active);
+  simplePhaseBadge?.classList.toggle('is-live', active);
+  thermoFill?.classList.toggle('is-streaming', active);
 
   if (btnAdv) {
-    btnAdv.textContent = isRunning ? 'Cancelar Medição' : 'Iniciar Diagnóstico';
-    btnAdv.classList.toggle('cancel', isRunning);
+    btnAdv.textContent = active ? 'Cancelar Medição' : 'Iniciar Diagnóstico';
+    btnAdv.classList.toggle('cancel', active);
   }
   if (btnSimple) {
-    btnSimple.textContent = isRunning ? 'Cancelar Teste' : 'Iniciar Teste';
-    btnSimple.classList.toggle('cancel', isRunning);
+    btnSimple.textContent = active ? 'Cancelar Teste' : 'Iniciar Teste';
+    btnSimple.classList.toggle('cancel', active);
   }
 }
 

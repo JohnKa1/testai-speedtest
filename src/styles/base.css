@@ -44,6 +44,11 @@ body {
     will-change: transform;
     animation: bg-drift 90s ease-in-out infinite alternate;
   }
+
+  body.is-measuring .bg-layer,
+  body.is-page-hidden .bg-layer {
+    animation-play-state: paused;
+  }
 }
 
 @keyframes bg-drift {
