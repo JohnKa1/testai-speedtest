@@ -8,9 +8,11 @@ import { SpeedTestService } from './services/speedtest.service.js';
 import { registerServiceWorker, setupInstallPrompt } from './services/pwa.js';
 import {
   DEFAULT_RUNTIME_CONFIG,
+  getRuntimeConfig,
   loadRuntimeConfig,
   setRuntimeConfig
 } from './services/runtime-config.js';
+import { shareTestResult } from './services/share-card.js';
 import { evaluateConnection } from './diagnostics/connection-diagnostics.js';
 import { evaluateGamingReadiness } from './diagnostics/gaming-analyzer.js';
 import {
@@ -106,6 +108,25 @@ const state = {
 const thermometer = new ThermometerComponent();
 const deviceService = new DeviceSpecsService();
 const devicePanel = createDevicePanelController({ deviceService, state });
+let shareFeedbackTimerId = null;
+
+function clearShareFeedbackTimer() {
+  if (shareFeedbackTimerId !== null) {
+    clearTimeout(shareFeedbackTimerId);
+    shareFeedbackTimerId = null;
+  }
+}
+
+function setShareButtonVisible(visible) {
+  clearShareFeedbackTimer();
+  const shareBtn = /** @type {HTMLButtonElement | null} */ (
+    document.getElementById('shareResultBtn')
+  );
+  if (!shareBtn) return;
+  shareBtn.classList.toggle('hidden', !visible);
+  shareBtn.disabled = !visible;
+  shareBtn.textContent = 'Compartilhar Resultado';
+}
 
 function applyRuntimeBranding(config) {
   if (!config || typeof document === 'undefined') return;
@@ -246,6 +267,7 @@ const speedTestService = new SpeedTestService({
     resetDiagnosticsAndTechnicalUI();
     renderCapabilitiesSkeleton({ busy: true });
     setRunningControls(true);
+    setShareButtonVisible(false);
     hideStatusBanner();
     startDisplayLoop();
   },
@@ -272,6 +294,7 @@ const speedTestService = new SpeedTestService({
     stopDisplayLoop();
     setActiveMetricPhase(null);
     setRunningControls(false);
+    setShareButtonVisible(false);
     setAllTelemetryEmpty(false);
     renderCapabilitiesSkeleton({ busy: false });
     updateSimpleGauge(0, 'idle');
@@ -303,6 +326,7 @@ const speedTestService = new SpeedTestService({
     if (errorPayload.partialResult) {
       handleCompletedResult(errorPayload.partialResult, true);
     } else {
+      setShareButtonVisible(false);
       setAllTelemetryEmpty(false);
       renderCapabilitiesSkeleton({ busy: false });
       updateSimpleGauge(0, 'danger');
@@ -583,6 +607,7 @@ function handleCompletedResult(result, isPartial = false) {
   const record = toHistoryRecord(result, diagnosis, gaming);
   state.history = appendHistoryRecord(record);
   refreshHistoryView();
+  setShareButtonVisible(true);
 }
 
 function triggerStartOrCancel() {
@@ -721,6 +746,43 @@ function initApp() {
 
   document.getElementById('startBtnSimple')?.addEventListener('click', triggerStartOrCancel);
   document.getElementById('startBtnAdv')?.addEventListener('click', triggerStartOrCancel);
+
+  const shareBtn = /** @type {HTMLButtonElement | null} */ (
+    document.getElementById('shareResultBtn')
+  );
+  shareBtn?.addEventListener('click', async () => {
+    if (!state.lastResult || shareBtn.disabled) return;
+    clearShareFeedbackTimer();
+    shareBtn.disabled = true;
+    shareBtn.textContent = 'Gerando card...';
+
+    let status = 'error';
+    try {
+      const outcome = await shareTestResult(state.lastResult, getRuntimeConfig());
+      status = outcome.status;
+      if (status === 'shared') {
+        shareBtn.textContent = 'Compartilhado!';
+      } else if (status === 'downloaded') {
+        shareBtn.textContent = 'Card salvo!';
+      } else {
+        shareBtn.textContent = 'Compartilhar Resultado';
+      }
+    } catch {
+      shareBtn.textContent = 'Erro ao gerar card';
+    }
+
+    if (status === 'cancelled') {
+      shareBtn.disabled = speedTestService.isRunning();
+      return;
+    }
+
+    shareFeedbackTimerId = setTimeout(() => {
+      shareFeedbackTimerId = null;
+      if (speedTestService.isRunning()) return;
+      shareBtn.textContent = 'Compartilhar Resultado';
+      shareBtn.disabled = false;
+    }, 2200);
+  });
 
   document.getElementById('deviceSearchForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
