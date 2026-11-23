@@ -546,3 +546,118 @@
   gap: var(--sp-1);
   font-size: var(--fs-body);
 }
+
+/* Aba 4: Rota / Jogos (Looking Glass TCP) */
+.lg-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.lg-presets-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.lg-custom-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+}
+
+.lg-custom-form .control-group {
+  flex: 1 1 220px;
+}
+
+.lg-notice {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-item);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-body);
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.lg-status-text {
+  font-size: var(--fs-label);
+  color: var(--info);
+  min-height: 1.2em;
+}
+
+.lg-error-box {
+  background: var(--bad-bg);
+  color: var(--bad);
+  border-radius: var(--r-item);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-body);
+}
+
+.lg-result-card {
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-item);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.lg-result-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.lg-result-target {
+  display: block;
+  font-size: 1.0625rem;
+  color: var(--text-1);
+  margin-top: var(--sp-1);
+}
+
+.lg-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--sp-2);
+}
+
+.lg-result-metric {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-item);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.lg-metric-label {
+  font-size: var(--fs-label);
+  color: var(--text-2);
+}
+
+.lg-metric-val {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.lg-samples-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.lg-sample-chip {
+  font-size: var(--fs-label);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--info-bg);
+  color: var(--info);
+}

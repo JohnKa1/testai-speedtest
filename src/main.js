@@ -28,6 +28,7 @@ import {
   renderUsageVerdictsAndComparison,
   resetUsageVerdictsUI
 } from './ui/insights-view.js';
+import { setupLookingGlassPanel } from './ui/looking-glass-view.js';
 import { evaluateConnection } from './diagnostics/connection-diagnostics.js';
 import { evaluateGamingReadiness } from './diagnostics/gaming-analyzer.js';
 import {
@@ -908,6 +909,7 @@ function initApp() {
   devicePanel.renderBrandCards();
   setupInstallPrompt();
   registerServiceWorker();
+  const lookingGlassPanel = setupLookingGlassPanel({ getConfig: getRuntimeConfig });
 
   loadRuntimeConfig()
     .then((config) => {
@@ -915,7 +917,10 @@ function initApp() {
       speedTestService.setRuntimeConfig(config);
       applyRuntimeBranding(config);
     })
-    .catch(() => {});
+    .catch(() => {})
+    .finally(() => {
+      lookingGlassPanel.refreshAvailability().catch(() => {});
+    });
 
   try {
     state.history = loadHistory();

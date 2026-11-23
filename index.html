@@ -543,6 +543,17 @@
             >
               Histórico
             </button>
+            <button
+              type="button"
+              class="tab-btn"
+              id="tab-looking-glass"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-looking-glass"
+              data-tab="looking-glass"
+            >
+              Rota / Jogos
+            </button>
           </nav>
 
           <!-- ABA 1: DIAGNÓSTICO + GAMING -->
@@ -723,6 +734,59 @@
                     </tr>
                   </tbody>
                 </table>
+              </div>
+            </article>
+          </section>
+
+          <!-- ABA 4: ROTA / JOGOS (LOOKING GLASS) -->
+          <section
+            id="panel-looking-glass"
+            class="tab-panel hidden"
+            role="tabpanel"
+            aria-labelledby="tab-looking-glass"
+          >
+            <article class="card glass">
+              <div class="diag-top-row">
+                <div>
+                  <h2>Rota / Jogos (Looking Glass TCP)</h2>
+                  <p class="card-hint">
+                    Sonda de latência TCP em servidores de referência e rotas de jogos executada pelo servidor do provedor
+                  </p>
+                </div>
+              </div>
+
+              <div class="lg-notice hidden" id="lgUnavailableNotice" role="status">
+                O diagnóstico de rota e servidores de jogos (Looking Glass) fica disponível automaticamente quando o TestAi está rodando na hospedagem self-hosted (Docker / Node.js).
+              </div>
+
+              <div class="lg-controls" id="lgControlsWrap">
+                <div class="lg-presets-row" id="lgPresetsRow"></div>
+
+                <form class="lg-custom-form" id="lgCustomForm">
+                  <div class="control-group">
+                    <label class="control-label" for="lgHostInput">Host público (IP ou domínio)</label>
+                    <input
+                      type="text"
+                      id="lgHostInput"
+                      class="control-input"
+                      placeholder="Ex.: 1.1.1.1 ou ec2.sa-east-1.amazonaws.com"
+                    />
+                  </div>
+                  <div class="control-group">
+                    <label class="control-label" for="lgPortSelect">Porta TCP</label>
+                    <select id="lgPortSelect" class="control-select">
+                      <option value="443" selected>443 (HTTPS)</option>
+                      <option value="80">80 (HTTP)</option>
+                    </select>
+                  </div>
+                  <button type="submit" class="btn-secondary" id="lgRunBtn">
+                    Testar Rota
+                  </button>
+                </form>
+
+                <p class="lg-status-text" id="lgStatusText" aria-live="polite"></p>
+                <div class="lg-error-box hidden" id="lgErrorBox" role="alert"></div>
+                <div class="lg-result-card hidden" id="lgResultCard"></div>
               </div>
             </article>
           </section>
