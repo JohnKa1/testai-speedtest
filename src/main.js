@@ -12,7 +12,8 @@ import {
   loadRuntimeConfig,
   setRuntimeConfig
 } from './services/runtime-config.js';
-import { shareTestResult } from './services/share-card.js';
+import { buildShareSummaryText, shareTestResult } from './services/share-card.js';
+import { applyEmbedMode, copyTextToClipboard } from './utils/embed-mode.js';
 import {
   buildHistoryEntry,
   clearHistory as clearInsightsHistory,
@@ -126,6 +127,7 @@ const thermometer = new ThermometerComponent();
 const deviceService = new DeviceSpecsService();
 const devicePanel = createDevicePanelController({ deviceService, state });
 let shareFeedbackTimerId = null;
+let copySummaryTimerId = null;
 
 function clearShareFeedbackTimer() {
   if (shareFeedbackTimerId !== null) {
@@ -134,15 +136,32 @@ function clearShareFeedbackTimer() {
   }
 }
 
+function clearCopySummaryTimer() {
+  if (copySummaryTimerId !== null) {
+    clearTimeout(copySummaryTimerId);
+    copySummaryTimerId = null;
+  }
+}
+
 function setShareButtonVisible(visible) {
   clearShareFeedbackTimer();
+  clearCopySummaryTimer();
   const shareBtn = /** @type {HTMLButtonElement | null} */ (
     document.getElementById('shareResultBtn')
   );
-  if (!shareBtn) return;
-  shareBtn.classList.toggle('hidden', !visible);
-  shareBtn.disabled = !visible;
-  shareBtn.textContent = 'Compartilhar Resultado';
+  if (shareBtn) {
+    shareBtn.classList.toggle('hidden', !visible);
+    shareBtn.disabled = !visible;
+    shareBtn.textContent = 'Compartilhar Resultado';
+  }
+  const copyBtn = /** @type {HTMLButtonElement | null} */ (
+    document.getElementById('copySummaryBtn')
+  );
+  if (copyBtn) {
+    copyBtn.classList.toggle('hidden', !visible);
+    copyBtn.disabled = !visible;
+    copyBtn.textContent = 'Copiar Resumo';
+  }
 }
 
 function applyRuntimeBranding(config) {
@@ -813,6 +832,26 @@ function initApp() {
     }, 2200);
   });
 
+  const copySummaryBtn = /** @type {HTMLButtonElement | null} */ (
+    document.getElementById('copySummaryBtn')
+  );
+  copySummaryBtn?.addEventListener('click', async () => {
+    if (!state.lastResult || copySummaryBtn.disabled) return;
+    clearCopySummaryTimer();
+    copySummaryBtn.disabled = true;
+
+    const summaryText = buildShareSummaryText(state.lastResult, getRuntimeConfig());
+    const copied = await copyTextToClipboard(summaryText);
+    copySummaryBtn.textContent = copied ? 'Resumo copiado!' : 'Erro ao copiar';
+
+    copySummaryTimerId = setTimeout(() => {
+      copySummaryTimerId = null;
+      if (speedTestService.isRunning()) return;
+      copySummaryBtn.textContent = 'Copiar Resumo';
+      copySummaryBtn.disabled = false;
+    }, 2000);
+  });
+
   document.getElementById('deviceSearchForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const queryEl = /** @type {HTMLInputElement | null} */ (
@@ -903,6 +942,7 @@ function initApp() {
     resetUsageVerdictsUI();
   });
 
+  applyEmbedMode();
   setUiMode('simple');
   setupTabs();
   updateOnlineIndicator();

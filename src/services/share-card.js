@@ -172,10 +172,12 @@ export function buildShareSummaryText(result, runtimeConfig = DEFAULT_RUNTIME_CO
     data.ispName !== DEFAULT_RUNTIME_CONFIG.ispName
       ? `${data.ispName} • TestAi`
       : 'TestAi — Medidor de Velocidade';
+  const modeLabel = data.isCommercial ? 'Comercial (P90)' : 'Sustentado (P50)';
 
   return [
     headerBrand,
     `Servidor: ${data.serverLabel} (${data.dateTimeLabel})`,
+    `Modo: ${modeLabel}`,
     `Download: ${data.dlPrimaryText} (${data.dlSubText})`,
     `Upload: ${data.ulPrimaryText} (${data.ulSubText})`,
     `Ping: ${data.pingText} | Jitter: ${data.jitterText}`,
