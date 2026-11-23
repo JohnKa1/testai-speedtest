@@ -1,0 +1,29 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment:
+      PORT: "3001"
+      HOST: "0.0.0.0"
+      ISP_NAME: "${ISP_NAME:-TestAi}"
+      SERVER_LABEL: "${SERVER_LABEL:-On-Net Server}"
+      ALLOWED_ORIGIN: "${ALLOWED_ORIGIN:-*}"
+      MAX_DOWNLOAD_BYTES: "${MAX_DOWNLOAD_BYTES:-104857600}"
+
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "${TESTAI_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    environment:
+      ISP_NAME: "${ISP_NAME:-TestAi}"
+      SERVER_LABEL: "${SERVER_LABEL:-On-Net Server}"
+      MEASUREMENT_MODE: "${MEASUREMENT_MODE:-commercial}"
+      PARALLEL_DOWNLOAD_STREAMS: "${PARALLEL_DOWNLOAD_STREAMS:-6}"
+      PARALLEL_UPLOAD_STREAMS: "${PARALLEL_UPLOAD_STREAMS:-4}"
