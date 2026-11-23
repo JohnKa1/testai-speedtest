@@ -65,7 +65,8 @@ input:focus-visible,
 button:focus-visible,
 [tabindex]:focus-visible,
 [data-tip]:focus-visible,
-.brand-radio:focus-visible + .brand-option {
+.brand-radio:focus-visible + .brand-option,
+.device-fallback-link:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }

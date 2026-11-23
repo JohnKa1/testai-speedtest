@@ -681,7 +681,7 @@
 
           <!-- SELEÇÃO DE MARCA (GRADE 2x4 / 4x2 COM RÁDIOS NATIVOS) -->
           <div class="device-step-block" id="deviceBrandStep">
-            <span class="sr-only" id="deviceBrandStatus" aria-live="polite"></span>
+            <span class="sr-only" id="deviceBrandStatus" role="status" aria-live="polite"></span>
             <div
               class="device-brand-grid brand-grid"
               id="deviceBrandGrid"
@@ -711,7 +711,12 @@
               </button>
             </form>
 
-            <div id="deviceFeedback" class="device-feedback hidden" role="status"></div>
+            <div
+              id="deviceFeedback"
+              class="device-feedback hidden"
+              role="status"
+              aria-live="polite"
+            ></div>
 
             <div class="device-fallback-row">
               <a

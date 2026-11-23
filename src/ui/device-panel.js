@@ -260,6 +260,22 @@ export function createDevicePanelController({ deviceService, state }) {
     if (container) clearElement(container);
   }
 
+  function closeSuggestionsOnEscape(ev) {
+    if (!ev || ev.key !== 'Escape') return;
+    const box = document.getElementById('deviceSuggestionsBox');
+    const wasOpen = Boolean(box && !box.classList.contains('hidden'));
+    clearSuggestions();
+    if (wasOpen && typeof ev.preventDefault === 'function') {
+      ev.preventDefault();
+    }
+    const input = /** @type {HTMLInputElement | null} */ (
+      document.getElementById('deviceQueryInput')
+    );
+    if (input && typeof input.focus === 'function') {
+      input.focus();
+    }
+  }
+
   function clearResultPanel() {
     state.selectedDevice = null;
     const panel = document.getElementById('deviceResultPanel');
@@ -332,6 +348,8 @@ export function createDevicePanelController({ deviceService, state }) {
       const btn = createEl('button', 'chip-btn suggestion-chip', item.model);
       btn.type = 'button';
       btn.setAttribute('role', 'option');
+
+      btn.addEventListener('keydown', closeSuggestionsOnEscape);
 
       btn.addEventListener('click', () => {
         container.querySelectorAll('.chip-btn.is-active').forEach((el) => {
@@ -523,7 +541,7 @@ export function createDevicePanelController({ deviceService, state }) {
       brandGrid.appendChild(cell);
     });
 
-    // Vincula listener de digitação em tempo real na Etapa 2
+    // Vincula listener de digitação em tempo real e tecla Escape na Etapa 2
     const inputEl = /** @type {HTMLInputElement | null} */ (
       document.getElementById('deviceQueryInput')
     );
@@ -537,6 +555,13 @@ export function createDevicePanelController({ deviceService, state }) {
         renderLiveSuggestions(inputEl.value);
         syncGoogleFallbackLink(inputEl.value, { highlightAsAction: false });
       });
+      inputEl.addEventListener('keydown', closeSuggestionsOnEscape);
+    }
+
+    const suggestionsBox = document.getElementById('deviceSuggestionsBox');
+    if (suggestionsBox && suggestionsBox.dataset && !suggestionsBox.dataset.escBound) {
+      suggestionsBox.dataset.escBound = 'true';
+      suggestionsBox.addEventListener('keydown', closeSuggestionsOnEscape);
     }
     syncGoogleFallbackLink(inputEl ? inputEl.value : '', { highlightAsAction: false });
   }

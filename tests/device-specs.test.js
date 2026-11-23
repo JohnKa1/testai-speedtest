@@ -883,4 +883,193 @@ describe('TestAi — Inteligência de Dispositivos (Wikipedia + Google Play)', (
       globalThis.document = prevDocument;
     }
   });
+
+  it('Etapa 5: tecla Escape fecha #deviceSuggestionsBox preservando marca e texto, e garante focus-visible e aria-live="polite"', async () => {
+    const fs = await import('node:fs');
+    const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const controlsCss = fs.readFileSync(
+      new URL('../src/styles/controls.css', import.meta.url),
+      'utf8'
+    );
+
+    // 1. Verifica .device-fallback-link:focus-visible em src/styles/controls.css
+    assert.ok(
+      controlsCss.includes('.device-fallback-link:focus-visible'),
+      'controls.css deve incluir .device-fallback-link:focus-visible na regra de foco visível'
+    );
+
+    // 2. Verifica aria-live="polite" em #deviceBrandStatus e #deviceFeedback no index.html
+    assert.match(
+      html,
+      /<[^>]*id="deviceBrandStatus"[^>]*aria-live="polite"[^>]*>/,
+      '#deviceBrandStatus deve possuir aria-live="polite"'
+    );
+    assert.match(
+      html,
+      /<[^>]*id="deviceFeedback"[^>]*aria-live="polite"[^>]*>/,
+      '#deviceFeedback deve possuir aria-live="polite"'
+    );
+
+    // 3. Verifica que Escape fecha #deviceSuggestionsBox preservando marca selecionada, texto digitado e foco no input
+    const prevDocument = globalThis.document;
+    let focusedNode = null;
+
+    const makeNode = (tag, id = '', initialClasses = []) => {
+      const classes = new Set(initialClasses);
+      const attrs = new Map();
+      const listeners = new Map();
+      let _className = initialClasses.join(' ');
+
+      const node = {
+        tagName: tag.toUpperCase(),
+        id,
+        type: '',
+        name: '',
+        value: '',
+        checked: false,
+        disabled: false,
+        placeholder: '',
+        textContent: '',
+        dataset: {},
+        children: [],
+        get className() {
+          return _className;
+        },
+        set className(val) {
+          _className = String(val || '');
+          classes.clear();
+          _className
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((c) => classes.add(c));
+        },
+        get firstChild() {
+          return this.children[0] || null;
+        },
+        focus() {
+          focusedNode = this;
+        },
+        classList: {
+          add(...items) {
+            items.forEach((c) => classes.add(c));
+          },
+          remove(...items) {
+            items.forEach((c) => classes.delete(c));
+          },
+          toggle(c, force) {
+            if (force === undefined) {
+              if (classes.has(c)) classes.delete(c);
+              else classes.add(c);
+            } else if (force) classes.add(c);
+            else classes.delete(c);
+          },
+          contains(c) {
+            return classes.has(c);
+          }
+        },
+        setAttribute(k, v) {
+          attrs.set(k, String(v));
+        },
+        getAttribute(k) {
+          return attrs.has(k) ? attrs.get(k) : null;
+        },
+        removeAttribute(k) {
+          attrs.delete(k);
+        },
+        addEventListener(ev, fn) {
+          if (!listeners.has(ev)) listeners.set(ev, []);
+          listeners.get(ev).push(fn);
+        },
+        dispatch(ev, payload = {}) {
+          const fns = listeners.get(ev) || [];
+          fns.forEach((fn) => fn(payload));
+        },
+        appendChild(child) {
+          this.children.push(child);
+          return child;
+        },
+        removeChild(child) {
+          const idx = this.children.indexOf(child);
+          if (idx >= 0) this.children.splice(idx, 1);
+          return child;
+        },
+        querySelectorAll(selector) {
+          const results = [];
+          const visit = (n) => {
+            for (const ch of n.children || []) {
+              if (
+                (selector.includes('.brand-option') && ch.classList.contains('brand-option')) ||
+                (selector.includes('.brand-radio') && ch.classList.contains('brand-radio'))
+              ) {
+                results.push(ch);
+              }
+              visit(ch);
+            }
+          };
+          visit(this);
+          return results;
+        }
+      };
+      return node;
+    };
+
+    try {
+      const byId = {
+        deviceBrandGrid: makeNode('div', 'deviceBrandGrid'),
+        deviceBrandStatus: makeNode('span', 'deviceBrandStatus', ['sr-only']),
+        deviceModelStep: makeNode('div', 'deviceModelStep', ['device-step-block', 'hidden']),
+        deviceQueryLabel: makeNode('label', 'deviceQueryLabel'),
+        deviceQueryInput: makeNode('input', 'deviceQueryInput'),
+        deviceSearchBtn: makeNode('button', 'deviceSearchBtn'),
+        deviceGoogleLink: makeNode('a', 'deviceGoogleLink', ['device-fallback-link']),
+        deviceSuggestionsBox: makeNode('div', 'deviceSuggestionsBox', ['hidden']),
+        deviceSuggestionsTitle: makeNode('span', 'deviceSuggestionsTitle'),
+        deviceLiveSuggestions: makeNode('div', 'deviceLiveSuggestions'),
+        deviceFeedback: makeNode('div', 'deviceFeedback', ['hidden']),
+        deviceResultPanel: makeNode('div', 'deviceResultPanel', ['hidden'])
+      };
+
+      globalThis.document = {
+        getElementById: (id) => byId[id] || null,
+        createElement: (tag) => makeNode(tag),
+        createTextNode: (t) => ({ textContent: t })
+      };
+
+      const service = new DeviceSpecsService({ fetchImpl: createMockOnlineSources() });
+      const state = { selectedBrandId: null, selectedDevice: null, deviceLookupSeq: 0 };
+      const controller = createDevicePanelController({ deviceService: service, state });
+      controller.renderBrandCards();
+
+      controller.selectBrand('samsung');
+      byId.deviceQueryInput.value = 'Galaxy S24';
+      byId.deviceQueryInput.dispatch('input');
+
+      // As sugestões abriram
+      assert.equal(byId.deviceSuggestionsBox.classList.contains('hidden'), false);
+      assert.ok(byId.deviceLiveSuggestions.children.length > 0);
+
+      // Pressiona Escape no input: fecha #deviceSuggestionsBox, preserva marca e texto, mantém foco no input
+      focusedNode = null;
+      byId.deviceQueryInput.dispatch('keydown', { key: 'Escape' });
+      assert.equal(byId.deviceSuggestionsBox.classList.contains('hidden'), true);
+      assert.equal(byId.deviceLiveSuggestions.children.length, 0);
+      assert.equal(state.selectedBrandId, 'samsung');
+      assert.equal(byId.deviceQueryInput.value, 'Galaxy S24');
+      assert.equal(focusedNode, byId.deviceQueryInput);
+
+      // Reabre sugestões e pressiona Escape a partir de um chip de sugestão focado: fecha e devolve foco ao input
+      byId.deviceQueryInput.dispatch('input');
+      assert.equal(byId.deviceSuggestionsBox.classList.contains('hidden'), false);
+      const firstSuggestionBtn = byId.deviceLiveSuggestions.children[0];
+      assert.ok(firstSuggestionBtn);
+      focusedNode = firstSuggestionBtn;
+      firstSuggestionBtn.dispatch('keydown', { key: 'Escape' });
+      assert.equal(byId.deviceSuggestionsBox.classList.contains('hidden'), true);
+      assert.equal(state.selectedBrandId, 'samsung');
+      assert.equal(byId.deviceQueryInput.value, 'Galaxy S24');
+      assert.equal(focusedNode, byId.deviceQueryInput);
+    } finally {
+      globalThis.document = prevDocument;
+    }
+  });
 });

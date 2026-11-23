@@ -2,6 +2,23 @@
    DESKTOP & TABLET BREAKPOINTS (PROGRESSIVE ENHANCEMENT) + REDUCED MOTION
 ============================================================================ */
 
+@media (min-width: 640px) {
+  .device-search-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .device-search-form .btn-secondary {
+    width: auto;
+  }
+
+  .device-fallback-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+}
+
 @media (min-width: 720px) {
   .topbar {
     flex-direction: row;
@@ -54,10 +71,6 @@
   .brand-grid,
   .device-brand-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .device-search-form {
-    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .device-bands-grid {
