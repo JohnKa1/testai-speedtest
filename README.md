@@ -46,8 +46,9 @@ Aplicação web de diagnóstico de rede e análise comparativa de capacidade Wi-
   - `21–59 ms`: elevação moderada / possível congestionamento.
   - `>= 60 ms`: alerta de **possível bufferbloat** (retenção severa de fila).
 
-#### Detecção de Aba em Segundo Plano (`visibilitychange`)
+#### Detecção de Aba em Segundo Plano (`visibilitychange`) e Pausa Visual na Medição
 - Como navegadores reduzem a frequência de timers quando uma aba é minimizada ou trocada, o TestAi monitora `document.visibilityState` durante testes ativos e alerta no banner caso a aba tenha ficado em segundo plano.
+- **Camada de fundo em rede e vidro fosco (`.bg-layer` + `.glass`):** a deriva visual de fundo (`bg-drift 90s`) opera apenas quando `prefers-reduced-motion: no-preference` está ativo e **pausa automaticamente** durante toda a medição (`body.is-measuring`) e quando a aba fica oculta (`body.is-page-hidden`), garantindo prioridade de CPU/GPU para a telemetria. O protocolo e as medições reais comparativas (`A/B/C`) estão documentados em [`docs/medicoes-fundo.md`](./docs/medicoes-fundo.md).
 
 ---
 
