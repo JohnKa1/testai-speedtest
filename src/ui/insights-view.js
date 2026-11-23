@@ -140,6 +140,7 @@ export function resetUsageVerdictsUI() {
 export function renderRecentHistoryPanel(entries) {
   const listEl = document.getElementById('recentHistoryList');
   const emptyEl = document.getElementById('recentHistoryEmpty');
+  const countBadgeEl = document.getElementById('recentHistoryCountBadge');
   const csvBtn = /** @type {HTMLButtonElement | null} */ (
     document.getElementById('recentExportCsvBtn')
   );
@@ -153,6 +154,9 @@ export function renderRecentHistoryPanel(entries) {
   const list = Array.isArray(entries) ? entries.slice(0, 10) : [];
   const hasItems = list.length > 0;
 
+  if (countBadgeEl) {
+    countBadgeEl.textContent = list.length === 1 ? '1 teste' : `${list.length} testes`;
+  }
   if (csvBtn) csvBtn.disabled = !hasItems;
   if (jsonBtn) jsonBtn.disabled = !hasItems;
   if (clearBtn) clearBtn.disabled = !hasItems;

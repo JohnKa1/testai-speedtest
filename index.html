@@ -250,7 +250,7 @@
           </div>
 
           <!-- VEREDITO SIMPLIFICADO PÓS-TESTE -->
-          <article class="card glass simple-verdict-card hidden" id="simpleVerdictCard">
+          <article class="card surface-level-2 simple-verdict-card hidden" id="simpleVerdictCard">
             <div class="diag-top-row">
               <div>
                 <span class="diag-badge" id="simpleVerdictBadge">RESULTADO</span>
@@ -265,7 +265,7 @@
 
           <!-- SELOS DE USO REAL E COMPARATIVO -->
           <section
-            class="card glass usage-verdict-section hidden"
+            class="card surface-level-2 usage-verdict-section hidden"
             id="usageVerdictSection"
             aria-label="Selos práticos de uso e comparativo"
           >
@@ -279,90 +279,111 @@
             <div class="comparison-delta-bar" id="comparisonDeltaBar"></div>
           </section>
 
-          <!-- CARDS INTELIGENTES: O QUE POSSO FAZER COM MINHA INTERNET? -->
-          <section class="capabilities-section" aria-label="O que posso fazer com minha internet">
-            <div class="section-heading">
-              <h2>O que posso fazer com minha internet?</h2>
-              <p class="card-hint" id="capabilitiesSubtitle">
-                Execute um teste para avaliar vídeos 4K, downloads, jogos, chamadas e casa conectada.
-              </p>
+          <!-- CARDS INTELIGENTES: O QUE POSSO FAZER COM MINHA INTERNET? (NÍVEL 3 RECOLHÍVEL) -->
+          <details class="disclosure-panel" id="moreUsesDisclosure">
+            <summary class="disclosure-summary">
+              <span class="disclosure-summary-main">
+                <span class="disclosure-title">Ver mais usos</span>
+                <span class="disclosure-subtitle">O que posso fazer com minha internet?</span>
+              </span>
+            </summary>
+            <div class="disclosure-body">
+              <section class="capabilities-section" aria-label="O que posso fazer com minha internet">
+                <div class="section-heading">
+                  <h2>O que posso fazer com minha internet?</h2>
+                  <p class="card-hint" id="capabilitiesSubtitle">
+                    Execute um teste para avaliar vídeos 4K, downloads, jogos, chamadas e casa conectada.
+                  </p>
+                </div>
+
+                <div class="capabilities-grid is-empty" id="capabilitiesGrid" aria-busy="false">
+                  <article class="capability-card capability-skeleton" aria-hidden="true">
+                    <div class="capability-card-top">
+                      <span class="skel-bar skel-title"></span>
+                      <span class="skel-bar skel-pill"></span>
+                    </div>
+                    <div class="capability-skeleton-lines">
+                      <span class="skel-bar skel-line"></span>
+                      <span class="skel-bar skel-line skel-line-short"></span>
+                    </div>
+                  </article>
+
+                  <article class="capability-card capability-skeleton" aria-hidden="true">
+                    <div class="capability-card-top">
+                      <span class="skel-bar skel-title"></span>
+                      <span class="skel-bar skel-pill"></span>
+                    </div>
+                    <div class="capability-skeleton-lines">
+                      <span class="skel-bar skel-line"></span>
+                      <span class="skel-bar skel-line skel-line-short"></span>
+                    </div>
+                  </article>
+
+                  <article class="capability-card capability-skeleton" aria-hidden="true">
+                    <div class="capability-card-top">
+                      <span class="skel-bar skel-title"></span>
+                      <span class="skel-bar skel-pill"></span>
+                    </div>
+                    <div class="capability-skeleton-lines">
+                      <span class="skel-bar skel-line"></span>
+                      <span class="skel-bar skel-line skel-line-short"></span>
+                    </div>
+                  </article>
+
+                  <article class="capability-card capability-skeleton" aria-hidden="true">
+                    <div class="capability-card-top">
+                      <span class="skel-bar skel-title"></span>
+                      <span class="skel-bar skel-pill"></span>
+                    </div>
+                    <div class="capability-skeleton-lines">
+                      <span class="skel-bar skel-line"></span>
+                      <span class="skel-bar skel-line skel-line-short"></span>
+                    </div>
+                  </article>
+                </div>
+              </section>
             </div>
+          </details>
 
-            <div class="capabilities-grid is-empty" id="capabilitiesGrid" aria-busy="false">
-              <article class="capability-card capability-skeleton" aria-hidden="true">
-                <div class="capability-card-top">
-                  <span class="skel-bar skel-title"></span>
-                  <span class="skel-bar skel-pill"></span>
+          <!-- HISTÓRICO RECENTE COMPARATIVO (ATÉ 10 TESTES — NÍVEL 3 RECOLHÍVEL) -->
+          <details class="disclosure-panel" id="recentHistoryDisclosure">
+            <summary class="disclosure-summary">
+              <span class="disclosure-summary-main">
+                <span class="disclosure-title">Histórico recente</span>
+                <span class="disclosure-subtitle">Últimos 10 testes salvos localmente neste navegador</span>
+              </span>
+              <span class="disclosure-badge mono" id="recentHistoryCountBadge">0 testes</span>
+            </summary>
+            <div class="disclosure-body">
+              <section
+                class="recent-history-section"
+                id="recentHistorySection"
+                aria-label="Histórico recente de testes"
+              >
+                <div class="recent-history-header">
+                  <div>
+                    <h2>Histórico Recente</h2>
+                    <p class="card-hint">Últimos 10 testes salvos localmente neste navegador.</p>
+                  </div>
+                  <div class="recent-history-actions">
+                    <button type="button" class="btn-secondary" id="recentExportCsvBtn" disabled>
+                      Exportar CSV
+                    </button>
+                    <button type="button" class="btn-secondary" id="recentExportJsonBtn" disabled>
+                      Exportar JSON
+                    </button>
+                    <button type="button" class="btn-secondary" id="recentClearHistoryBtn" disabled>
+                      Limpar
+                    </button>
+                  </div>
                 </div>
-                <div class="capability-skeleton-lines">
-                  <span class="skel-bar skel-line"></span>
-                  <span class="skel-bar skel-line skel-line-short"></span>
-                </div>
-              </article>
-
-              <article class="capability-card capability-skeleton" aria-hidden="true">
-                <div class="capability-card-top">
-                  <span class="skel-bar skel-title"></span>
-                  <span class="skel-bar skel-pill"></span>
-                </div>
-                <div class="capability-skeleton-lines">
-                  <span class="skel-bar skel-line"></span>
-                  <span class="skel-bar skel-line skel-line-short"></span>
-                </div>
-              </article>
-
-              <article class="capability-card capability-skeleton" aria-hidden="true">
-                <div class="capability-card-top">
-                  <span class="skel-bar skel-title"></span>
-                  <span class="skel-bar skel-pill"></span>
-                </div>
-                <div class="capability-skeleton-lines">
-                  <span class="skel-bar skel-line"></span>
-                  <span class="skel-bar skel-line skel-line-short"></span>
-                </div>
-              </article>
-
-              <article class="capability-card capability-skeleton" aria-hidden="true">
-                <div class="capability-card-top">
-                  <span class="skel-bar skel-title"></span>
-                  <span class="skel-bar skel-pill"></span>
-                </div>
-                <div class="capability-skeleton-lines">
-                  <span class="skel-bar skel-line"></span>
-                  <span class="skel-bar skel-line skel-line-short"></span>
-                </div>
-              </article>
+                <p class="empty-state-text" id="recentHistoryEmpty">
+                  Nenhum teste salvo ainda. Conclua uma medição para comparar resultados.
+                </p>
+                <ul class="recent-history-list" id="recentHistoryList"></ul>
+              </section>
             </div>
-          </section>
-
-          <!-- HISTÓRICO RECENTE COMPARATIVO (ATÉ 10 TESTES) -->
-          <section
-            class="card glass recent-history-section"
-            id="recentHistorySection"
-            aria-label="Histórico recente de testes"
-          >
-            <div class="recent-history-header">
-              <div>
-                <h2>Histórico Recente</h2>
-                <p class="card-hint">Últimos 10 testes salvos localmente neste navegador.</p>
-              </div>
-              <div class="recent-history-actions">
-                <button type="button" class="btn-secondary" id="recentExportCsvBtn" disabled>
-                  Exportar CSV
-                </button>
-                <button type="button" class="btn-secondary" id="recentExportJsonBtn" disabled>
-                  Exportar JSON
-                </button>
-                <button type="button" class="btn-secondary" id="recentClearHistoryBtn" disabled>
-                  Limpar
-                </button>
-              </div>
-            </div>
-            <p class="empty-state-text" id="recentHistoryEmpty">
-              Nenhum teste salvo ainda. Conclua uma medição para comparar resultados.
-            </p>
-            <ul class="recent-history-list" id="recentHistoryList"></ul>
-          </section>
+          </details>
         </section>
 
         <!-- ================================================================
@@ -797,86 +818,96 @@
         </section>
 
         <!-- ================================================================
-             MÓDULO COMPARTILHADO: CONSULTE SEU DISPOSITIVO
+             MÓDULO COMPARTILHADO: CONSULTE SEU DISPOSITIVO (NÍVEL 3 RECOLHÍVEL)
         ================================================================ -->
-        <section class="card glass device-card" aria-label="Consulte seu dispositivo">
-          <div class="diag-top-row">
-            <h2>Consulte seu dispositivo</h2>
-          </div>
-
-          <!-- SELEÇÃO DE MARCA (GRADE 2x4 / 4x2 COM RÁDIOS NATIVOS) -->
-          <div class="device-step-block" id="deviceBrandStep">
-            <span class="sr-only" id="deviceBrandStatus" role="status" aria-live="polite"></span>
-            <div
-              class="device-brand-grid brand-grid"
-              id="deviceBrandGrid"
-              role="radiogroup"
-              aria-label="Marca do dispositivo"
-            ></div>
-          </div>
-
-          <!-- PASSO 2: BUSCA DO MODELO + AUTOCOMPLETE INSTANTÂNEO -->
-          <div class="device-step-block hidden" id="deviceModelStep">
-            <form class="device-search-form" id="deviceSearchForm" autocomplete="off">
-              <div class="control-group device-input-wrap">
-                <label class="control-label" for="deviceQueryInput" id="deviceQueryLabel">
-                  Modelo do aparelho
-                </label>
-                <input
-                  type="text"
-                  id="deviceQueryInput"
-                  class="control-input"
-                  maxlength="80"
-                  disabled
-                  placeholder="Selecione uma marca acima..."
-                />
+        <details class="disclosure-panel disclosure-device" id="deviceLookupDisclosure">
+          <summary class="disclosure-summary">
+            <span class="disclosure-summary-main">
+              <span class="disclosure-title">Consulte seu dispositivo</span>
+              <span class="disclosure-subtitle">Descubra o limite de Wi-Fi do seu aparelho</span>
+            </span>
+          </summary>
+          <div class="disclosure-body">
+            <section class="device-card" aria-label="Consulte seu dispositivo">
+              <div class="diag-top-row">
+                <h2>Consulte seu dispositivo</h2>
               </div>
-              <button type="submit" class="btn-secondary" id="deviceSearchBtn" disabled>
-                Consultar
-              </button>
-            </form>
 
-            <div
-              id="deviceFeedback"
-              class="device-feedback hidden"
-              role="status"
-              aria-live="polite"
-            ></div>
-
-            <div class="device-fallback-row">
-              <a
-                id="deviceGoogleLink"
-                class="device-fallback-link"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-disabled="true"
-              >
-                Seu dispositivo não aparece? Pesquisar no Google <span aria-hidden="true">↗</span>
-                <span class="sr-only">(abre em nova aba)</span>
-              </a>
-              <span class="device-fallback-hint">
-                Abre o Google em nova aba com o modelo digitado.
-              </span>
-            </div>
-
-            <!-- SUGESTÕES COERENTES EM TEMPO REAL A CADA TECLA -->
-            <div class="device-suggestions-box hidden" id="deviceSuggestionsBox">
-              <div class="device-suggestions-header">
-                <span class="device-suggestions-title" id="deviceSuggestionsTitle">
-                  Modelos sugeridos:
-                </span>
+              <!-- SELEÇÃO DE MARCA (GRADE 2x4 / 4x2 COM RÁDIOS NATIVOS) -->
+              <div class="device-step-block" id="deviceBrandStep">
+                <span class="sr-only" id="deviceBrandStatus" role="status" aria-live="polite"></span>
+                <div
+                  class="device-brand-grid brand-grid"
+                  id="deviceBrandGrid"
+                  role="radiogroup"
+                  aria-label="Marca do dispositivo"
+                ></div>
               </div>
-              <div
-                class="device-chips"
-                id="deviceLiveSuggestions"
-                role="listbox"
-                aria-label="Sugestões de modelos compatíveis com a escrita"
-              ></div>
-            </div>
-          </div>
 
-          <div id="deviceResultPanel" class="device-result-panel hidden"></div>
-        </section>
+              <!-- PASSO 2: BUSCA DO MODELO + AUTOCOMPLETE INSTANTÂNEO -->
+              <div class="device-step-block hidden" id="deviceModelStep">
+                <form class="device-search-form" id="deviceSearchForm" autocomplete="off">
+                  <div class="control-group device-input-wrap">
+                    <label class="control-label" for="deviceQueryInput" id="deviceQueryLabel">
+                      Modelo do aparelho
+                    </label>
+                    <input
+                      type="text"
+                      id="deviceQueryInput"
+                      class="control-input"
+                      maxlength="80"
+                      disabled
+                      placeholder="Selecione uma marca acima..."
+                    />
+                  </div>
+                  <button type="submit" class="btn-secondary" id="deviceSearchBtn" disabled>
+                    Consultar
+                  </button>
+                </form>
+
+                <div
+                  id="deviceFeedback"
+                  class="device-feedback hidden"
+                  role="status"
+                  aria-live="polite"
+                ></div>
+
+                <div class="device-fallback-row">
+                  <a
+                    id="deviceGoogleLink"
+                    class="device-fallback-link"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-disabled="true"
+                  >
+                    Seu dispositivo não aparece? Pesquisar no Google <span aria-hidden="true">↗</span>
+                    <span class="sr-only">(abre em nova aba)</span>
+                  </a>
+                  <span class="device-fallback-hint">
+                    Abre o Google em nova aba com o modelo digitado.
+                  </span>
+                </div>
+
+                <!-- SUGESTÕES COERENTES EM TEMPO REAL A CADA TECLA -->
+                <div class="device-suggestions-box hidden" id="deviceSuggestionsBox">
+                  <div class="device-suggestions-header">
+                    <span class="device-suggestions-title" id="deviceSuggestionsTitle">
+                      Modelos sugeridos:
+                    </span>
+                  </div>
+                  <div
+                    class="device-chips"
+                    id="deviceLiveSuggestions"
+                    role="listbox"
+                    aria-label="Sugestões de modelos compatíveis com a escrita"
+                  ></div>
+                </div>
+              </div>
+
+              <div id="deviceResultPanel" class="device-result-panel hidden"></div>
+            </section>
+          </div>
+        </details>
       </main>
     </div>
 
