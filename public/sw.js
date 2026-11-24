@@ -1,12 +1,12 @@
-const CACHE_NAME = 'testai-static-v1';
+const CACHE_NAME = 'testai-static-v2';
 const CACHE_PREFIX = 'testai-static-';
 
 const APP_SHELL_URLS = ['/', '/index.html', '/manifest.webmanifest'];
 
 /**
  * Determina se uma requisição deve ignorar completamente o Service Worker.
- * Regra crítica: nunca interceptar medições, endpoints dinâmicos, /config.json,
- * /api/*, speed.cloudflare.com ou métodos diferentes de GET.
+ * Regra crítica: nunca interceptar medições (/download, /upload, /ping, /api/*),
+ * /metrics, /config.json, speed.cloudflare.com ou métodos diferentes de GET.
  *
  * @param {Request} request
  * @param {string} currentOrigin
@@ -31,10 +31,14 @@ function shouldBypassRequest(request, currentOrigin) {
 
   const { pathname } = parsedUrl;
 
-  // Nunca interceptar API de medição, config dinâmica ou o próprio Service Worker
+  // Nunca interceptar rotas de medição, métricas, config dinâmica ou o próprio Service Worker
   if (
     pathname === '/api' ||
     pathname.startsWith('/api/') ||
+    pathname === '/download' ||
+    pathname === '/upload' ||
+    pathname === '/ping' ||
+    pathname === '/metrics' ||
     pathname === '/config.json' ||
     pathname === '/sw.js'
   ) {
@@ -53,7 +57,7 @@ function shouldBypassRequest(request, currentOrigin) {
 }
 
 /**
- * Estratégia Network-First com atualização silenciosa de cache e fallback offline.
+ * Estratégia Network-First com revalidação imediata em navegações e fallback offline.
  *
  * @param {Request} request
  * @returns {Promise<Response>}
@@ -62,7 +66,10 @@ async function networkFirst(request) {
   const cache = await caches.open(CACHE_NAME);
 
   try {
-    const response = await fetch(request);
+    const response =
+      request.mode === 'navigate'
+        ? await fetch(request, { cache: 'no-cache' })
+        : await fetch(request);
     if (
       response &&
       response.ok &&

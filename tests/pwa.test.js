@@ -52,7 +52,7 @@ test('manifest.webmanifest é válido e referencia ícones existentes', () => {
   }
 });
 
-test('index.html referencia manifesto, theme-color, apple-touch-icon e botão instalar oculto', () => {
+test('index.html referencia manifesto, theme-color, apple-touch-icon e botão instalar no cabeçalho', () => {
   const html = fs.readFileSync(path.join(ROOT_DIR, 'index.html'), 'utf8');
   assert.match(html, /<meta\s+name="theme-color"\s+content="#0B0F19"\s*\/?>/);
   assert.match(html, /<link\s+rel="manifest"\s+href="\.\/manifest\.webmanifest"\s*\/?>/);
@@ -61,7 +61,7 @@ test('index.html referencia manifesto, theme-color, apple-touch-icon e botão in
     /<link\s+rel="apple-touch-icon"[^>]+href="\.\/icons\/icon-192\.png"[^>]*\/?>/,
   );
   assert.match(html, /id="installAppBtn"/);
-  assert.match(html, /class="[^"]*\bhidden\b[^"]*"\s+id="installAppBtn"/);
+  assert.match(html, /class="[^"]*\bpill\b[^"]*\bpill-action-btn\b[^"]*"\s+id="installAppBtn"/);
 });
 
 test('shouldBypassPwaCache ignora medições, API, config.json e POST', () => {
@@ -306,56 +306,49 @@ test('isPwaSecureContext e registerServiceWorker respeitam HTTPS e localhost', a
   assert.equal(failed, null);
 });
 
-test('setupInstallPrompt mostra e oculta #installAppBtn sem usar HTML dinâmico', async () => {
+test('setupInstallPrompt exibe botão fora do standalone, usa fallback seguro e oculta após instalar', async () => {
   const winListeners = new Map();
   const btnListeners = new Map();
-  const classes = new Set(['btn-secondary', 'hidden']);
+  const classes = new Set(['pill', 'pill-action-btn']);
+  let fallbackMessage = '';
 
   const installBtn = {
     textContent: 'Instalar App',
     classList: {
-      add(c) {
-        classes.add(c);
-      },
-      remove(c) {
-        classes.delete(c);
-      },
+      add(c) { classes.add(c); },
+      remove(c) { classes.delete(c); },
     },
-    addEventListener(type, fn) {
-      btnListeners.set(type, fn);
-    },
-    removeEventListener(type) {
-      btnListeners.delete(type);
-    },
+    addEventListener(type, fn) { btnListeners.set(type, fn); },
+    removeEventListener(type) { btnListeners.delete(type); },
   };
 
   const winMock = {
-    addEventListener(type, fn) {
-      winListeners.set(type, fn);
-    },
-    removeEventListener(type) {
-      winListeners.delete(type);
-    },
+    matchMedia() { return { matches: false }; },
+    addEventListener(type, fn) { winListeners.set(type, fn); },
+    removeEventListener(type) { winListeners.delete(type); },
   };
 
   const docMock = {
-    getElementById(id) {
-      return id === 'installAppBtn' ? installBtn : null;
-    },
+    getElementById(id) { return id === 'installAppBtn' ? installBtn : null; },
   };
 
-  const controller = setupInstallPrompt({ win: winMock, doc: docMock });
-  assert.equal(classes.has('hidden'), true);
+  const controller = setupInstallPrompt({
+    win: winMock,
+    doc: docMock,
+    nav: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)' },
+    onFallback: (msg) => { fallbackMessage = msg; },
+  });
+  assert.equal(classes.has('hidden'), false);
+
+  const beforePromptResult = await controller.triggerInstall();
+  assert.equal(beforePromptResult, false);
+  assert.match(fallbackMessage, /Compartilhar/i);
 
   let prevented = false;
   let prompted = false;
   winListeners.get('beforeinstallprompt')({
-    preventDefault() {
-      prevented = true;
-    },
-    async prompt() {
-      prompted = true;
-    },
+    preventDefault() { prevented = true; },
+    async prompt() { prompted = true; },
     userChoice: Promise.resolve({ outcome: 'accepted' }),
   });
 
@@ -368,11 +361,18 @@ test('setupInstallPrompt mostra e oculta #installAppBtn sem usar HTML dinâmico'
   assert.equal(accepted, true);
   assert.equal(classes.has('hidden'), true);
 
-  // Evento appinstalled também mantém botão oculto
   classes.delete('hidden');
   winListeners.get('appinstalled')();
   assert.equal(classes.has('hidden'), true);
 
   controller.cleanup();
   assert.equal(winListeners.size, 0);
+
+  classes.delete('hidden');
+  const standaloneCtrl = setupInstallPrompt({
+    win: { ...winMock, matchMedia() { return { matches: true }; } },
+    doc: docMock,
+  });
+  assert.equal(classes.has('hidden'), true);
+  standaloneCtrl.cleanup();
 });

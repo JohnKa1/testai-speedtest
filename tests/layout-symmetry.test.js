@@ -19,7 +19,7 @@ function extractHeaderBlock(html) {
   return match ? match[1] : '';
 }
 
-test('botão PWA #installAppBtn foi movido do cabeçalho para o rodapé preservando ID e classes', () => {
+test('botão PWA #installAppBtn fica simétrico ao lado de Online no cabeçalho sem duplicar no rodapé', () => {
   const html = readUtf8('index.html');
   const headerHtml = extractHeaderBlock(html);
   const footerHtml = extractFooterBlock(html);
@@ -28,18 +28,28 @@ test('botão PWA #installAppBtn foi movido do cabeçalho para o rodapé preserva
   assert.ok(footerHtml.length > 0, 'index.html deve conter <footer>');
 
   assert.equal(
-    headerHtml.includes('id="installAppBtn"'),
-    false,
-    '#installAppBtn não deve permanecer dentro de .topbar'
+    (html.match(/id="installAppBtn"/g) || []).length,
+    1,
+    'index.html deve conter apenas um elemento #installAppBtn'
   );
   assert.match(
-    footerHtml,
-    /class="[^"]*\bbtn-secondary\b[^"]*\bhidden\b[^"]*"\s+id="installAppBtn"/,
-    '<footer> deve conter #installAppBtn mantendo class="btn-secondary hidden"'
+    headerHtml,
+    /id="networkStatusPill"[\s\S]*?<button[^>]*class="[^"]*\bpill\b[^"]*\bpill-action-btn\b[^"]*"[^>]*id="installAppBtn"[\s\S]*?<svg\b/,
+    '.topbar deve posicionar #installAppBtn com ícone SVG inline ao lado de #networkStatusPill'
+  );
+  assert.equal(
+    footerHtml.includes('id="installAppBtn"'),
+    false,
+    '<footer> não deve duplicar #installAppBtn'
   );
 
+  const baseCss = readUtf8('src', 'styles', 'base.css');
+  assert.match(baseCss, /\.pill\s*\{[\s\S]*?height:\s*36px;/);
+  assert.match(baseCss, /\.pill-action-btn\s*\{/);
+
   const simpleCss = readUtf8('src', 'styles', 'simple-mode.css');
-  assert.ok(simpleCss.includes('body.is-embed footer'));
+  assert.ok(simpleCss.includes('body.is-embed #installAppBtn'));
+  assert.ok(simpleCss.includes('body.is-embed .topbar'));
 });
 
 test('padronização dos botões do medidor: altura >= 48px e border-radius var(--r-item) simétricos', () => {

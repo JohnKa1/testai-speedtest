@@ -82,6 +82,14 @@ export const SVG_ICON_REGISTRY = Object.freeze({
     Object.freeze({ tag: 'line', attrs: { x1: '8', y1: '21', x2: '16', y2: '21' } }),
     Object.freeze({ tag: 'line', attrs: { x1: '12', y1: '17', x2: '12', y2: '21' } }),
     Object.freeze({ tag: 'polygon', attrs: { points: '10 8 15 10 10 12 10 8' } })
+  ]),
+  download: Object.freeze([
+    Object.freeze({
+      tag: 'path',
+      attrs: { d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }
+    }),
+    Object.freeze({ tag: 'polyline', attrs: { points: '7 10 12 15 17 10' } }),
+    Object.freeze({ tag: 'line', attrs: { x1: '12', y1: '15', x2: '12', y2: '3' } })
   ])
 });
 

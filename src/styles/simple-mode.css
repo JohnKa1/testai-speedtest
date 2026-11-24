@@ -671,6 +671,7 @@
 /* Modo Widget compacto para incorporação em iframe (?embed=1) */
 body.is-embed .topbar,
 body.is-embed footer,
+body.is-embed #installAppBtn,
 body.is-embed .mode-switcher,
 body.is-embed #advancedExperience,
 body.is-embed .simple-plan-bar,

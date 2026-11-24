@@ -213,23 +213,71 @@ body[data-ui-mode='advanced'] .app-shell {
 .pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--sp-2);
   background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   padding: var(--sp-1) var(--sp-3);
-  min-height: 34px;
+  min-height: 36px;
+  height: 36px;
   font-size: var(--fs-label);
+  line-height: 1;
   color: var(--text-2);
   white-space: nowrap;
 }
 
 .status-indicator {
-  background: transparent;
-  border-color: transparent;
-  padding: var(--sp-1) var(--sp-2);
+  background: var(--surface-1);
+  border-color: var(--line);
   color: var(--text-1);
   font-weight: 600;
+}
+
+.pill-action-btn {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+  color: var(--text-1);
+  font-family: var(--font);
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background-color var(--dur-fast) var(--ease-noc),
+    border-color var(--dur-fast) var(--ease-noc),
+    color var(--dur-fast) var(--ease-noc);
+}
+
+.pill-action-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--info);
+  color: var(--info);
+}
+
+.ui-icon-sm {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.pwa-install-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sp-4);
+  transform: translateX(-50%);
+  z-index: 60;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border: 1px solid var(--info);
+  border-radius: var(--r-item);
+  color: var(--text-1);
+  font-family: var(--font);
+  font-size: var(--fs-label);
+  line-height: 1.4;
+  text-align: center;
+  cursor: pointer;
 }
 
 .app-footer {

@@ -1066,7 +1066,31 @@ function initApp() {
   updateOnlineIndicator();
   syncContractedPlanValue(readPersistedContractedMbps(), 'init');
   devicePanel.renderBrandCards();
-  setupInstallPrompt();
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let installHintTimerId = null;
+  setupInstallPrompt({
+    onFallback: (message) => {
+      let toast = document.getElementById('pwaInstallToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'pwaInstallToast';
+        toast.className = 'pwa-install-toast';
+        toast.setAttribute('role', 'status');
+        toast.setAttribute('aria-live', 'polite');
+        toast.addEventListener('click', () => {
+          toast?.classList.add('hidden');
+        });
+        document.body.appendChild(toast);
+      }
+      toast.textContent = message;
+      toast.classList.remove('hidden');
+      if (installHintTimerId) clearTimeout(installHintTimerId);
+      installHintTimerId = setTimeout(() => {
+        installHintTimerId = null;
+        toast?.classList.add('hidden');
+      }, 6500);
+    },
+  });
   registerServiceWorker();
   const lookingGlassPanel = setupLookingGlassPanel({ getConfig: getRuntimeConfig });
 

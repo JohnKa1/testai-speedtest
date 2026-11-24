@@ -77,6 +77,10 @@ export function shouldBypassPwaCache(
   if (
     pathname === '/api' ||
     pathname.startsWith('/api/') ||
+    pathname === '/download' ||
+    pathname === '/upload' ||
+    pathname === '/ping' ||
+    pathname === '/metrics' ||
     pathname === '/config.json' ||
     pathname === '/sw.js'
   ) {
@@ -91,6 +95,44 @@ export function shouldBypassPwaCache(
     pathname === '/manifest.webmanifest';
 
   return !(isNavigation || isStaticAsset);
+}
+
+/**
+ * Detecta se a aplicação já está sendo executada instalada em modo standalone.
+ *
+ * @param {any} [win]
+ * @param {any} [nav]
+ * @returns {boolean}
+ */
+export function isStandaloneDisplayMode(
+  win = globalThis.window,
+  nav = globalThis.navigator,
+) {
+  try {
+    if (win && typeof win.matchMedia === 'function') {
+      if (win.matchMedia('(display-mode: standalone)')?.matches === true) {
+        return true;
+      }
+    }
+  } catch {
+    // matchMedia pode estar indisponível em ambientes restritos
+  }
+  return nav?.standalone === true;
+}
+
+/**
+ * Retorna instrução curta de instalação manual quando o navegador não dispara
+ * `beforeinstallprompt` (ex.: Safari/iOS, Firefox ou cooldown do Chrome).
+ *
+ * @param {string | null | undefined} [userAgent]
+ * @returns {string}
+ */
+export function getManualInstallInstructions(userAgent = globalThis.navigator?.userAgent || '') {
+  const ua = String(userAgent || '');
+  if (/iphone|ipad|ipod/i.test(ua)) {
+    return 'Para instalar no iOS: toque em Compartilhar e depois em "Adicionar à Tela de Início".';
+  }
+  return 'Para instalar: use o ícone de instalação na barra de endereço ou o menu do navegador → "Instalar aplicativo".';
 }
 
 /**
@@ -120,26 +162,30 @@ export async function registerServiceWorker({
   }
 
   try {
-    return await swContainer.register(swUrl);
+    return await swContainer.register(swUrl, { updateViaCache: 'none' });
   } catch {
     return null;
   }
 }
 
 /**
- * Conecta o fluxo nativo de instalação (`beforeinstallprompt` / `appinstalled`)
- * a um botão opcional no cabeçalho sem manipular HTML diretamente.
+ * Conecta o fluxo de instalação PWA (`beforeinstallprompt`, `appinstalled` e fallback seguro)
+ * ao botão no cabeçalho sem manipular HTML diretamente.
  *
  * @param {object} [options]
  * @param {any} [options.win]
  * @param {any} [options.doc]
+ * @param {any} [options.nav]
  * @param {string} [options.buttonId]
+ * @param {(message: string) => void} [options.onFallback]
  * @returns {{ triggerInstall: () => Promise<boolean>, cleanup: () => void }}
  */
 export function setupInstallPrompt({
   win = globalThis.window,
   doc = globalThis.document,
+  nav = globalThis.navigator,
   buttonId = 'installAppBtn',
+  onFallback,
 } = {}) {
   const installBtn =
     doc && typeof doc.getElementById === 'function' ? doc.getElementById(buttonId) : null;
@@ -154,27 +200,47 @@ export function setupInstallPrompt({
   };
 
   const showButton = () => {
-    if (installBtn) {
+    if (!installBtn) return;
+    const labelEl =
+      typeof installBtn.querySelector === 'function'
+        ? installBtn.querySelector('.btn-label')
+        : null;
+    if (labelEl) {
+      labelEl.textContent = 'Instalar App';
+    } else if (!installBtn.firstChild) {
       installBtn.textContent = 'Instalar App';
-      if (installBtn.classList && typeof installBtn.classList.remove === 'function') {
-        installBtn.classList.remove('hidden');
-      }
+    }
+    if (installBtn.classList && typeof installBtn.classList.remove === 'function') {
+      installBtn.classList.remove('hidden');
     }
   };
 
+  const isEmbed = Boolean(doc?.body?.classList?.contains?.('is-embed'));
+  if (isStandaloneDisplayMode(win, nav) || isEmbed) {
+    hideButton();
+  } else {
+    showButton();
+  }
+
   const triggerInstall = async () => {
     if (!deferredPrompt || typeof deferredPrompt.prompt !== 'function') {
+      if (typeof onFallback === 'function') {
+        onFallback(getManualInstallInstructions(nav?.userAgent));
+      }
       return false;
     }
 
     const promptEvent = deferredPrompt;
     deferredPrompt = null;
-    hideButton();
 
     try {
       await promptEvent.prompt();
       const choice = await promptEvent.userChoice;
-      return choice?.outcome === 'accepted';
+      if (choice?.outcome === 'accepted') {
+        hideButton();
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -186,7 +252,9 @@ export function setupInstallPrompt({
       event.preventDefault();
     }
     deferredPrompt = event;
-    showButton();
+    if (!isStandaloneDisplayMode(win, nav) && !doc?.body?.classList?.contains?.('is-embed')) {
+      showButton();
+    }
   };
 
   const handleAppInstalled = () => {

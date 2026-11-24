@@ -178,6 +178,12 @@
     justify-content: flex-start;
   }
 
+  #networkStatusPill,
+  .pill-action-btn {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
   .simple-hero-card {
     padding: var(--sp-4) var(--sp-3);
   }
