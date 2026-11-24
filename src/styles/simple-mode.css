@@ -333,13 +333,6 @@
   color: var(--text-2);
 }
 
-/* Cards Inteligentes: O que posso fazer? */
-.capabilities-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-}
-
 .section-heading {
   display: flex;
   flex-direction: column;
@@ -348,49 +341,6 @@
 
 .section-heading h2 {
   font-size: var(--fs-title);
-  font-weight: 700;
-  color: var(--text-1);
-}
-
-.capabilities-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--sp-3);
-}
-
-.capabilities-grid > .empty-state {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: var(--sp-6) var(--sp-5);
-  background: var(--surface-2);
-  border: 0;
-  border-radius: var(--r-item);
-  color: var(--text-2);
-  font-size: var(--fs-body);
-  line-height: 1.5;
-  max-width: none;
-}
-
-.capability-card {
-  background: var(--surface-2);
-  border: none;
-  border-radius: var(--r-item);
-  padding: var(--sp-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.capability-card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-}
-
-.capability-title {
-  font-size: 1rem;
   font-weight: 700;
   color: var(--text-1);
 }
@@ -428,69 +378,6 @@
 .capability-pill.tone-neutral {
   background: var(--surface-2);
   color: var(--text-2);
-}
-
-.capability-desc {
-  font-size: var(--fs-body);
-  line-height: 1.5;
-  max-width: 65ch;
-  color: var(--text-2);
-}
-
-.capability-skeleton {
-  min-height: 132px;
-  justify-content: space-between;
-  pointer-events: none;
-  user-select: none;
-}
-
-.capability-skeleton-lines {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
-.skel-bar {
-  display: block;
-  background: var(--surface-hover);
-  border-radius: var(--sp-2);
-}
-
-.skel-title {
-  height: 20px;
-  width: 54%;
-}
-
-.skel-pill {
-  height: 28px;
-  width: 92px;
-  border-radius: var(--r-pill);
-  flex-shrink: 0;
-}
-
-.skel-line {
-  height: 14px;
-  width: 100%;
-}
-
-.skel-line-short {
-  width: 72%;
-}
-
-.capability-skeleton:nth-child(2) .skel-title {
-  width: 60%;
-}
-
-.capability-skeleton:nth-child(3) .skel-title {
-  width: 50%;
-}
-
-.capability-skeleton:nth-child(4) .skel-title {
-  width: 46%;
-}
-
-.capability-skeleton:nth-child(even) .skel-line-short {
-  width: 64%;
 }
 
 /* Selos práticos de uso e comparativo vs. teste anterior */
@@ -788,10 +675,8 @@ body.is-embed .mode-switcher,
 body.is-embed #advancedExperience,
 body.is-embed .simple-plan-bar,
 body.is-embed .disclosure-panel,
-body.is-embed #moreUsesDisclosure,
 body.is-embed #recentHistoryDisclosure,
 body.is-embed #deviceLookupDisclosure,
-body.is-embed .capabilities-section,
 body.is-embed #recentHistorySection,
 body.is-embed .device-card,
 body.is-embed #openAdvancedFromSimpleBtn {

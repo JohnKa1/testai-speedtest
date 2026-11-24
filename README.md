@@ -5,9 +5,9 @@
 ![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-10B981)
 ![Stack](https://img.shields.io/badge/stack-Vanilla%20JS%20%2B%20Vite%207-60A5FA)
 ![Dependências de Runtime](https://img.shields.io/badge/runtime%20deps-0-10B981)
-![Testes Automatizados](https://img.shields.io/badge/testes-111%20passando%20(12%20su%C3%ADtes%20%C2%B7%20node%3Atest)-60A5FA)
+![Testes Automatizados](https://img.shields.io/badge/testes-110%20passando%20(12%20su%C3%ADtes%20%C2%B7%20node%3Atest)-60A5FA)
 
-Aplicação web de diagnóstico de rede, Looking Glass TCP e análise comparativa de capacidade Wi-Fi/hardware de dispositivos. Projetada com **zero dependências de runtime**, **zero `innerHTML` / `outerHTML` / `insertAdjacentHTML`** (DOM 100% seguro via `createElement`, `createElementNS` e `textContent`), backend opcional em Node.js puro em RAM e **111 testes automatizados** em **12 suítes** (`node:test`).
+Aplicação web de diagnóstico de rede, Looking Glass TCP e análise comparativa de capacidade Wi-Fi/hardware de dispositivos. Projetada com **zero dependências de runtime**, **zero `innerHTML` / `outerHTML` / `insertAdjacentHTML`** (DOM 100% seguro via `createElement`, `createElementNS` e `textContent`), backend opcional em Node.js puro em RAM e **110 testes automatizados** em **12 suítes** (`node:test`).
 
 ---
 
@@ -28,7 +28,7 @@ Aplicação web de diagnóstico de rede, Looking Glass TCP e análise comparativ
 
 - **Estatística Canônica Única + Blocos Adaptativos para Fibra:** configurado por padrão em [`public/config.json`](./public/config.json) com `"measurementMode": "commercial"` (**P90** após descarte do aquecimento inicial *TCP Slow Start* de `1000 ms`, `parallelStreams: { download: 6, upload: 4 }`), escalando blocos HTTP de download até **50 MB** em links de fibra rápida enquanto preserva blocos menores em conexões móveis/lentas. Mantém suporte completo ao modo `"sustained"` (**P50**) e garante que **Download e Upload sigam exatamente a mesma estatística e o mesmo rótulo canônico** entre velocímetro, cards, veredito, card visual PNG e resumo copiado — enquanto o Modo Avançado/NOC preserva gráficos completos, P50, pico, ping, jitter e $\Delta\text{RTT}$.
 - **Detecção de Picos de Latência sob Carga (Regra A + C):** além da mediana sob carga (`Δ`), avalia todas as amostras coletadas durante download e upload para distinguir **picos isolados** (preserva o selo principal e registra nota objetiva com o valor em `ms` e a fase afetada) de **picos recorrentes** (rebaixa a estabilidade sob carga e alerta sobre impactos em jogos e videochamadas).
-- **Hierarquia Visual em 3 Níveis e Divulgação Progressiva (Modo Simples):** mantém sempre visíveis na primeira dobra pós-teste o medidor principal (Nível 1), o veredito simplificado humanizado e o bloco **"Pronto para o seu dia a dia?"** (Nível 2), recolhendo os 3 blocos secundários em painéis `<details>` / `<summary>` nativos fechados por padrão (*Ver mais usos*, *Histórico recente* com contador dinâmico `#recentHistoryCountBadge` e *Consulte seu dispositivo* — Nível 3).
+- **Hierarquia Visual em 3 Níveis e Divulgação Progressiva (Modo Simples):** mantém sempre visíveis na primeira dobra pós-teste o medidor principal (Nível 1), o veredito simplificado humanizado e o bloco **"Pronto para o seu dia a dia?"** (Nível 2), recolhendo os 2 blocos utilitários secundários em painéis `<details>` / `<summary>` nativos fechados por padrão (*Histórico recente* com contador dinâmico `#recentHistoryCountBadge` e *Consulte seu dispositivo* — Nível 3).
 - **Clareza de Leitura, Escala Dinâmica e Plano Contratado:** o placar principal utiliza tipografia tabular (`font-variant-numeric: tabular-nums`) com separação visual entre parte inteira e decimal (`.speed-int` / `.speed-dec`), exibe escala dinâmica (`0` ao teto em `Gbps`/`Mbps`) com marcador visual e traz um campo opcional de **plano contratado (Mbps)** no Modo Simples sincronizado bidirecionalmente e persistido junto com `#contractedInput` do Modo Avançado (exibindo `"X% do plano contratado"` no resultado). Após concluir o teste, o botão principal alterna para `"Testar novamente"` e o veredito no Modo Simples traduz notações técnicas (`Δ`) para português direto sem perder notas de picos.
 - **Ícones SVG Inline e Selos com Barras de Folga:** o módulo [`src/ui/icons.js`](./src/ui/icons.js) cria ícones SVG geométricos (`24×24`, `stroke="currentColor"`) via `document.createElementNS` — com zero requisições externas e zero `innerHTML` — nos botões de ação (`Iniciar Teste` / `Testar novamente`, `Compartilhar Resultado` e `Copiar Resumo`) e nos 3 selos práticos (**Jogos FPS**, **Videochamadas** e **Streaming 4K**), cada um exibindo barra visual proporcional de folga e linha curta objetiva.
 - **Simetria de Layout e Polimento Mobile (`360px`):** botões padronizados (`48px` de altura e `border-radius: var(--r-item)`), cabeçalho em linha única no desktop, botão de instalação PWA movido para o rodapé (`#installAppBtn`), alinhamento ao topo (`align-items: start`) no grid principal do Modo Avançado, grade uniforme em 2 colunas nos blocos de Gaming no desktop e layout mobile `<= 480px` sem overflow horizontal.
@@ -105,7 +105,7 @@ O TestAi pode ser incorporado diretamente no site institucional ou na **Central 
 
 Quando `?embed=1` está ativo (`isEmbedMode` → classe `body.is-embed`):
 - **Permanece visível (núcleo compacto):** velocímetro com escala e tipografia tabular, indicadores de resumo (Download, Upload, Ping e Estabilidade), botão principal (**Iniciar Teste** / **Testar novamente**), referência `% do plano` quando já preenchida no navegador, veredito simplificado humanizado, os 3 selos práticos com barras de folga (**Jogos FPS**, **Videochamadas**, **Streaming 4K** + comparativo), card visual WhatsApp (`#shareResultBtn`) e botão **Copiar Resumo** (`#copySummaryBtn`).
-- **Ocultado automaticamente:** cabeçalho completo (`.topbar`), seletor Simples/Avançado (`.mode-switcher`), Modo Avançado/NOC (`#advancedExperience`), barra de entrada do plano contratado (`.simple-plan-bar`), todos os painéis `<details>` recolhíveis (`.disclosure-panel` — *Ver mais usos*, *Histórico recente* e *Consulte seu dispositivo*), botão *"Ver análise técnica"* (`#openAdvancedFromSimpleBtn`) e rodapé completo (`footer`, incluindo o botão PWA `#installAppBtn`) — além de reduzir margens e espaçamentos externos para encaixar limpo no `iframe`.
+- **Ocultado automaticamente:** cabeçalho completo (`.topbar`), seletor Simples/Avançado (`.mode-switcher`), Modo Avançado/NOC (`#advancedExperience`), barra de entrada do plano contratado (`.simple-plan-bar`), todos os painéis `<details>` recolhíveis (`.disclosure-panel` — *Histórico recente* e *Consulte seu dispositivo*), botão *"Ver análise técnica"* (`#openAdvancedFromSimpleBtn`) e rodapé completo (`footer`, incluindo o botão PWA `#installAppBtn`) — além de reduzir margens e espaçamentos externos para encaixar limpo no `iframe`.
 - Sem `?embed=1`, o layout padrão permanece exatamente igual.
 
 ---
@@ -118,12 +118,12 @@ Consulte os contratos detalhados em [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE
 - `server/`: backend nativo Node.js em RAM (`index.js`), módulo Looking Glass Anti-SSRF + rate limit (`looking-glass.js`) e expositor Prometheus `GET /metrics` (`metrics.js`).
 - `src/config/`: perfis de medição (`TEST_PROFILES`) e critérios técnicos de diagnóstico/gaming.
 - `src/services/`: motor multi-stream (`speedtest.service.js`), carregador `runtime-config.js`, PWA (`pwa.js`), card Canvas (`share-card.js`), histórico comparativo (`history.service.js`), selos de uso com barras de folga (`usage-verdict.js`), cliente Looking Glass (`looking-glass.service.js`) e lookup de dispositivos (`device-specs.service.js`).
-- `src/diagnostics/`: regras puras de diagnóstico multidimensional + picos sob carga (`connection-diagnostics.js`), gaming (`gaming-analyzer.js`) e análise de capacidades (`capability-advisor.js`).
+- `src/diagnostics/`: regras puras de diagnóstico multidimensional + picos sob carga (`connection-diagnostics.js`), gaming (`gaming-analyzer.js`) e análise de estabilidade/capacidades (`capability-advisor.js`).
 - `src/ui/` e `src/main.js`: módulos seguros de interface (`telemetry-view.js`, `simple-view.js`, `insights-view.js`, `diagnostics-view.js`, `looking-glass-view.js`, `history-view.js`, `device-panel.js` e `icons.js`).
 - `src/utils/`: validadores, formatadores, busca Google e helper de Widget/Clipboard (`embed-mode.js`).
 - `src/styles/`: design system modular baseado exclusivamente em tokens em `tokens.css` (`base.css`, `controls.css`, `simple-mode.css`, `device-panel.css`, `advanced-mode.css`, `states-tooltips.css`, `responsive.css` e `main.css`).
 - `deploy/`, `Dockerfile`, `docker-compose.yml`, `docker-compose.caddy.yml`, `Caddyfile`: empacotamento containerizado e proxy reverso sem distorção.
-- `tests/`: **12 suítes** cobrindo **111 testes** em Node.js nativo (`node --test tests/*.test.js`).
+- `tests/`: **12 suítes** cobrindo **110 testes** em Node.js nativo (`node --test tests/*.test.js`).
 
 ---
 
@@ -138,7 +138,7 @@ npm install
 npm run dev           # Servidor de desenvolvimento Vite
 npm run start:server  # Micro-servidor Node.js de medição + Looking Glass + /metrics (porta 3001)
 npm run typecheck     # Verificação estática JSDoc (tsc -p tsconfig.json)
-npm test              # Executa todas as 12 suítes (111 testes)
+npm test              # Executa todas as 12 suítes (110 testes)
 npm run build         # Gera build de produção em dist/
 npm run preview       # Pré-visualiza dist/ localmente
 ```

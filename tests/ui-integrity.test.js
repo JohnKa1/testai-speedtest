@@ -9,15 +9,6 @@ describe('TestAi — Integridade de UI, Contratos DOM e Tokens CSS', () => {
     const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
     assert.ok(html.includes('id="simpleGaugeSvg"'));
     assert.ok(html.includes('id="simpleGaugeArc"'));
-    assert.ok(html.includes('capabilities-grid is-empty'));
-    assert.equal(
-      (html.match(/class="capability-card capability-skeleton"/g) || []).length,
-      4,
-      'index.html deve conter exatamente 4 cards skeleton iniciais em #capabilitiesGrid'
-    );
-    assert.ok(html.includes('skel-title'));
-    assert.ok(html.includes('skel-pill'));
-    assert.ok(html.includes('skel-line'));
     assert.ok(html.includes('simple-stat is-empty'));
     assert.ok(html.includes('metric-card is-empty'));
     assert.ok(html.includes('avg-box is-empty'));
@@ -47,10 +38,6 @@ describe('TestAi — Integridade de UI, Contratos DOM e Tokens CSS', () => {
     }
 
     const stylesDirUrl = new URL('../src/styles/', import.meta.url);
-    const simpleCss = fs.readFileSync(new URL('simple-mode.css', stylesDirUrl), 'utf8');
-    assert.ok(simpleCss.includes('.capabilities-grid > .empty-state'));
-    assert.ok(simpleCss.includes('grid-column: 1 / -1;'));
-
     const statesCss = fs.readFileSync(new URL('states-tooltips.css', stylesDirUrl), 'utf8');
     const motionMarker = '@media (prefers-reduced-motion: no-preference)';
     const motionIdx = statesCss.indexOf(motionMarker);
@@ -58,13 +45,13 @@ describe('TestAi — Integridade de UI, Contratos DOM e Tokens CSS', () => {
     const beforeMotionCss = statesCss.slice(0, motionIdx);
     const insideMotionCss = statesCss.slice(motionIdx);
     assert.equal(
-      beforeMotionCss.includes('.capabilities-grid.is-empty .skel-bar'),
+      beforeMotionCss.includes('skeletonShimmer'),
       false,
       'shimmer do esqueleto não deve aparecer fora de @media (prefers-reduced-motion: no-preference)'
     );
     assert.ok(
-      insideMotionCss.includes('.capabilities-grid.is-empty .skel-bar'),
-      'states-tooltips.css deve incluir .capabilities-grid.is-empty .skel-bar dentro de prefers-reduced-motion: no-preference'
+      insideMotionCss.includes('.simple-stat.is-empty .simple-stat-value'),
+      'states-tooltips.css deve incluir shimmer dos placeholders dentro de prefers-reduced-motion: no-preference'
     );
 
     const smallFontRegex =
@@ -221,128 +208,6 @@ describe('TestAi — Integridade de UI, Contratos DOM e Tokens CSS', () => {
       globalThis.getComputedStyle = prevGetComputedStyle;
       globalThis.requestAnimationFrame = prevRaf;
       globalThis.cancelAnimationFrame = prevCancelRaf;
-    }
-  });
-
-  it('alterna corretamente entre esqueleto 2x2 (.is-empty) e cards de resultado em renderCapabilitiesSkeleton/Grid', async () => {
-    const prevDocument = globalThis.document;
-
-    const createDomNode = (tag, id = '') => {
-      const attrs = new Map();
-      const classSet = new Set();
-      let _className = '';
-      const node = {
-        tagName: tag,
-        id,
-        textContent: '',
-        children: [],
-        get firstChild() {
-          return this.children[0] || null;
-        },
-        get className() {
-          return _className;
-        },
-        set className(val) {
-          _className = String(val || '');
-          classSet.clear();
-          _className
-            .split(/\s+/)
-            .filter(Boolean)
-            .forEach((c) => classSet.add(c));
-        },
-        classList: {
-          add(...items) {
-            items.forEach((x) => classSet.add(x));
-            _className = [...classSet].join(' ');
-          },
-          remove(...items) {
-            items.forEach((x) => classSet.delete(x));
-            _className = [...classSet].join(' ');
-          },
-          contains(x) {
-            return classSet.has(x);
-          }
-        },
-        setAttribute(k, v) {
-          attrs.set(k, String(v));
-        },
-        getAttribute(k) {
-          return attrs.has(k) ? attrs.get(k) : null;
-        },
-        appendChild(child) {
-          this.children.push(child);
-          return child;
-        },
-        removeChild(child) {
-          const idx = this.children.indexOf(child);
-          if (idx >= 0) this.children.splice(idx, 1);
-          return child;
-        }
-      };
-      return node;
-    };
-
-    try {
-      const grid = createDomNode('div', 'capabilitiesGrid');
-      const subtitle = createDomNode('p', 'capabilitiesSubtitle');
-      const elements = new Map([
-        ['capabilitiesGrid', grid],
-        ['capabilitiesSubtitle', subtitle]
-      ]);
-
-      globalThis.document = {
-        getElementById: (id) => elements.get(id) || null,
-        createElement: (tag) => createDomNode(tag)
-      };
-
-      const {
-        CAPABILITIES_SUBTITLE_IDLE,
-        CAPABILITIES_SUBTITLE_READY,
-        CAPABILITIES_SUBTITLE_RUNNING,
-        renderCapabilitiesGrid,
-        renderCapabilitiesSkeleton
-      } = await import(`../src/ui/simple-view.js?skeletonTest=${Date.now()}`);
-
-      renderCapabilitiesSkeleton({ busy: true });
-      assert.equal(grid.classList.contains('is-empty'), true);
-      assert.equal(grid.getAttribute('aria-busy'), 'true');
-      assert.equal(grid.children.length, 4);
-      assert.ok(
-        grid.children.every(
-          (child) =>
-            child.classList.contains('capability-skeleton') &&
-            child.getAttribute('aria-hidden') === 'true'
-        )
-      );
-      assert.equal(subtitle.textContent, CAPABILITIES_SUBTITLE_RUNNING);
-
-      renderCapabilitiesGrid([
-        { id: 'streaming', title: 'Streaming & Vídeo', status: 'Excelente', tone: 'good', description: 'OK' },
-        { id: 'downloads', title: 'Downloads & Arquivos', status: 'Bom ritmo', tone: 'good', description: 'OK' },
-        { id: 'realtime', title: 'Jogos & Chamadas', status: 'Estável', tone: 'good', description: 'OK' },
-        { id: 'multi-device', title: 'Casa Conectada', status: 'Alta Capacidade', tone: 'good', description: 'OK' }
-      ]);
-      assert.equal(grid.classList.contains('is-empty'), false);
-      assert.equal(grid.getAttribute('aria-busy'), 'false');
-      assert.equal(grid.children.length, 4);
-      assert.equal(grid.children[0].classList.contains('capability-card'), true);
-      assert.equal(grid.children[0].classList.contains('capability-skeleton'), false);
-      assert.equal(subtitle.textContent, CAPABILITIES_SUBTITLE_READY);
-
-      renderCapabilitiesGrid([]);
-      assert.equal(grid.classList.contains('is-empty'), false);
-      assert.equal(grid.getAttribute('aria-busy'), 'false');
-      assert.equal(grid.children.length, 1);
-      assert.equal(grid.children[0].classList.contains('empty-state'), true);
-      assert.equal(subtitle.textContent, CAPABILITIES_SUBTITLE_READY);
-
-      renderCapabilitiesSkeleton({ busy: false });
-      assert.equal(grid.classList.contains('is-empty'), true);
-      assert.equal(grid.getAttribute('aria-busy'), 'false');
-      assert.equal(grid.children.length, 4);
-      assert.equal(subtitle.textContent, CAPABILITIES_SUBTITLE_IDLE);
-    } finally {
-      globalThis.document = prevDocument;
     }
   });
 

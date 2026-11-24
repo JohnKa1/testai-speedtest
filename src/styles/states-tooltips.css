@@ -52,7 +52,6 @@
   .metric-card.is-empty .value,
   .simple-stat.is-empty .simple-stat-value,
   .avg-box.is-empty .avg-value,
-  .capabilities-grid.is-empty .skel-bar,
   .canvas-wrap.is-empty::after {
     background: linear-gradient(
       90deg,

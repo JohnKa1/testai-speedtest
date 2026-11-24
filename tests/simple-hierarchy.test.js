@@ -79,15 +79,19 @@ test('hierarquia visual em 3 níveis: hero mantém .glass e blocos Nível 2 fica
   assert.ok(html.includes('Pronto para o seu dia a dia?'));
 });
 
-test('divulgação progressiva: 3 blocos secundários recolhidos em <details> nativos fechados por padrão', () => {
+test('divulgação progressiva: bloco "Pronto para o seu dia a dia?" visível e aba "Ver mais usos" removida com apenas 2 <details> utilitários', () => {
   const html = readUtf8('index.html');
 
+  assert.equal(html.includes('id="moreUsesDisclosure"'), false, '#moreUsesDisclosure não deve existir');
+  assert.equal(html.includes('Ver mais usos'), false, '"Ver mais usos" não deve existir');
+  assert.equal(html.includes('class="capabilities-section"'), false, '.capabilities-section não deve existir');
+  assert.equal(html.includes('id="capabilitiesGrid"'), false, '#capabilitiesGrid não deve existir');
+  assert.ok(html.includes('id="usageVerdictSection"'));
+
+  const detailsMatches = html.match(/<details\b/g) || [];
+  assert.equal(detailsMatches.length, 2, 'Devem existir apenas os 2 <details> utilitários');
+
   const specs = [
-    {
-      detailsId: 'moreUsesDisclosure',
-      summaryLabel: 'Ver mais usos',
-      innerMarker: 'class="capabilities-section"'
-    },
     {
       detailsId: 'recentHistoryDisclosure',
       summaryLabel: 'Histórico recente',
@@ -127,12 +131,10 @@ test('divulgação progressiva: 3 blocos secundários recolhidos em <details> na
   }
 });
 
-test('todos os IDs críticos de capacidades, histórico/exportação e dispositivo são preservados em index.html', () => {
+test('todos os IDs críticos de histórico/exportação e dispositivo são preservados em index.html', () => {
   const html = readUtf8('index.html');
 
   const requiredIds = [
-    'capabilitiesSubtitle',
-    'capabilitiesGrid',
     'recentHistoryCountBadge',
     'recentHistorySection',
     'recentHistoryEmpty',
@@ -163,8 +165,9 @@ test('simple-mode.css estiliza 3 níveis, acessibilidade de <summary> e oculta d
   assert.match(css, /\.disclosure-panel\s*\{[^}]*background:\s*var\(--bg-1\)/s);
   assert.match(css, /\.disclosure-summary\s*\{[^}]*cursor:\s*pointer/s);
   assert.match(css, /\.disclosure-summary:focus-visible\s*\{[^}]*outline:/s);
+  assert.equal(css.includes('#moreUsesDisclosure'), false);
+  assert.equal(css.includes('.capabilities-section'), false);
   assert.ok(css.includes('body.is-embed .disclosure-panel'));
-  assert.ok(css.includes('body.is-embed #moreUsesDisclosure'));
   assert.ok(css.includes('body.is-embed #recentHistoryDisclosure'));
   assert.ok(css.includes('body.is-embed #deviceLookupDisclosure'));
 });

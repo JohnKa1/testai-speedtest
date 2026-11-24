@@ -45,8 +45,7 @@ describe('TestAi — Contratos de Módulos Públicos', () => {
     assert.equal(typeof telemetryView.resetTelemetryUI, 'function');
     assert.equal(typeof telemetryView.updateSimpleGauge, 'function');
     assert.equal(typeof simpleView.renderSimpleVerdict, 'function');
-    assert.equal(typeof simpleView.renderCapabilitiesSkeleton, 'function');
-    assert.equal(typeof simpleView.renderCapabilitiesGrid, 'function');
+    assert.equal(typeof simpleView.humanizeSimpleVerdictSummary, 'function');
     assert.equal(typeof devicePanel.createDevicePanelController, 'function');
     assert.equal(typeof devicePanel.renderDeviceComparisonPanel, 'function');
     assert.equal(typeof devicePanel.showDeviceFeedback, 'function');

@@ -286,7 +286,6 @@ body[data-ui-mode='advanced'] .app-shell {
 }
 
 .simple-summary-grid > *,
-.capabilities-grid > *,
 .device-bands-grid > *,
 .device-tiers-grid > *,
 .device-specs-grid > *,

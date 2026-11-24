@@ -33,7 +33,6 @@ import { setupLookingGlassPanel } from './ui/looking-glass-view.js';
 import { evaluateConnection } from './diagnostics/connection-diagnostics.js';
 import { evaluateGamingReadiness } from './diagnostics/gaming-analyzer.js';
 import {
-  evaluatePracticalCapabilities,
   evaluateSimpleStability,
   getLiveCapabilityMilestone
 } from './diagnostics/capability-advisor.js';
@@ -91,11 +90,7 @@ import {
   updateSimpleGauge,
   updateSimpleGaugePlanMarker
 } from './ui/telemetry-view.js';
-import {
-  renderCapabilitiesGrid,
-  renderCapabilitiesSkeleton,
-  renderSimpleVerdict
-} from './ui/simple-view.js';
+import { renderSimpleVerdict } from './ui/simple-view.js';
 import {
   createDevicePanelController,
   renderDeviceComparisonPanel
@@ -398,7 +393,6 @@ const speedTestService = new SpeedTestService({
     state.backgroundedDuringRun = false;
     resetTelemetryUI(profile.label, thermometer);
     resetDiagnosticsAndTechnicalUI();
-    renderCapabilitiesSkeleton({ busy: true });
     setRunningControls(true, { hasCompleted: state.hasCompletedTest });
     setShareButtonVisible(false);
     resetUsageVerdictsUI();
@@ -432,7 +426,6 @@ const speedTestService = new SpeedTestService({
     setShareButtonVisible(false);
     resetUsageVerdictsUI();
     setAllTelemetryEmpty(false);
-    renderCapabilitiesSkeleton({ busy: false });
     updateSimpleGauge(0, 'idle', resolveGaugeScaleMax(state.contractedMbps));
     state.activePhase = 'cancelled';
     setText('phaseLabel', PHASE_LABELS.cancelled);
@@ -473,7 +466,6 @@ const speedTestService = new SpeedTestService({
       setShareButtonVisible(false);
       resetUsageVerdictsUI();
       setAllTelemetryEmpty(false);
-      renderCapabilitiesSkeleton({ busy: false });
       updateSimpleGauge(0, 'danger', resolveGaugeScaleMax(state.contractedMbps));
     }
   }
@@ -604,7 +596,6 @@ function handleCompletedResult(result, isPartial = false) {
 
   const diagnosis = evaluateConnection(result);
   const gaming = evaluateGamingReadiness(result);
-  const capabilities = evaluatePracticalCapabilities(result);
 
   state.lastResult = result;
   state.lastDiagnosis = diagnosis;
@@ -688,7 +679,6 @@ function handleCompletedResult(result, isPartial = false) {
   document.getElementById('simpleLiveHint')?.classList.add('hidden');
 
   renderSimpleVerdict(diagnosis);
-  renderCapabilitiesGrid(capabilities);
 
   // Atualiza Modo Avançado (estatística canônica idêntica no destaque, com Pico/P50 secundários)
   setText('phaseLabel', isPartial ? 'Parcial' : 'Concluído');
