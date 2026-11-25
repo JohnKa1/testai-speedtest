@@ -1,4 +1,4 @@
-const CACHE_NAME = 'testai-static-v2';
+const CACHE_NAME = 'testai-static-v3';
 const CACHE_PREFIX = 'testai-static-';
 
 const APP_SHELL_URLS = ['/', '/index.html', '/manifest.webmanifest'];

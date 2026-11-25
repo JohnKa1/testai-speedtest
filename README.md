@@ -156,6 +156,13 @@ npm run preview       # Pré-visualiza dist/ localmente
 node scripts/benchmark-profiles.mjs
 ```
 
+### Deploy Rápido com Imagens Pré-compiladas (`ghcr.io` — amd64 / arm64)
+Para subir o servidor On-Net sem compilar localmente no POP/VM, utilize as imagens multi-arquitetura publicadas automaticamente pelo workflow [`.github/workflows/docker-publish.yml`](./.github/workflows/docker-publish.yml):
+```bash
+cp .env.example .env
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
 Consulte o guia completo de produção On-Net, tuning **TCP BBR**, proteção de `/metrics` e validação pós-deploy em [**`docs/hospedagem-provedor.md`**](./docs/hospedagem-provedor.md).
 
 ---

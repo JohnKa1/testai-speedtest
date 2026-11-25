@@ -1,0 +1,6 @@
+services:
+  api:
+    image: ghcr.io/johnka1/testai-api:latest
+
+  web:
+    image: ghcr.io/johnka1/testai-web:latest
