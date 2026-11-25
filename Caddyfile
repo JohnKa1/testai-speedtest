@@ -1,11 +1,19 @@
 {$DOMAIN:localhost} {
+  header {
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Content-Security-Policy "frame-ancestors {$ALLOWED_FRAME_ANCESTORS:'self'};"
+    -X-Frame-Options
+  }
+
   # Bloqueia /metrics na borda pública; Prometheus coleta internamente via http://api:3001/metrics
   handle /metrics {
     respond "Forbidden" 403
   }
 
-  # Rotas de medição e Looking Glass: zero compressão e zero buffering para preservar precisão
+  # Rotas de medição e Looking Glass: zero compressão, zero buffering e sem cache
   handle /api/* {
+    header Cache-Control "no-store, no-cache, must-revalidate"
     reverse_proxy api:3001 {
       flush_interval -1
       header_up Host {host}
@@ -15,7 +23,13 @@
     }
   }
 
-  # Frontend estático (SPA + /config.json sem cache configurado no Nginx)
+  # Configuração dinâmica white-label nunca deve ser cacheada
+  handle /config.json {
+    header Cache-Control "no-store, no-cache, must-revalidate"
+    reverse_proxy web:80
+  }
+
+  # Frontend estático (SPA)
   handle {
     encode zstd gzip
     reverse_proxy web:80

@@ -307,6 +307,61 @@ body[data-ui-mode='advanced'] .app-shell {
   background: var(--bad);
 }
 
+/* Selo discreto de rota ativa (On-Net vs Off-Net / Cloudflare) */
+.route-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.route-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  min-height: 32px;
+  border-radius: var(--r-pill);
+  font-family: var(--font);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  line-height: 1.2;
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  color: var(--text-2);
+  cursor: help;
+}
+
+.route-origin-badge.tone-good,
+.route-origin-badge[data-route='on-net'] {
+  background: var(--ok-bg);
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.route-origin-badge.tone-warning,
+.route-origin-badge[data-route='off-net-fallback'] {
+  background: var(--warn-bg);
+  border-color: var(--line-strong);
+  color: var(--warn);
+}
+
+.route-origin-badge:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+
+.route-origin-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  flex-shrink: 0;
+  background: var(--warn);
+}
+
+.route-origin-badge[data-route='on-net'] .route-origin-dot {
+  background: var(--ok);
+}
+
 /* Cards de nível 1 + prevenção universal de estouro em itens de grid */
 .card {
   min-width: 0;

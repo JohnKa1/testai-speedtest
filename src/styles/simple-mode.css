@@ -696,3 +696,7 @@ body.is-embed .container {
 body.is-embed .simple-hero-card {
   padding: var(--sp-4);
 }
+
+body.is-embed .route-status-bar {
+  justify-content: center;
+}

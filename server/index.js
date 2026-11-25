@@ -5,6 +5,7 @@
  */
 
 import http from 'node:http';
+import net from 'node:net';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,9 @@ import { createMetricsRegistry, isValidMetricsAuth } from './metrics.js';
 const RAM_CHUNK_BYTES = 1024 * 1024; // 1 MiB pré-alocado no boot
 const DEFAULT_MAX_DOWNLOAD_BYTES = 104_857_600; // 100 MB
 const DEFAULT_MAX_UPLOAD_BYTES = 134_217_728; // 128 MB
+const DEFAULT_MAX_STREAMS_PER_IP = 8; // 6 fluxos paralelos + 2 de margem para reconexão
+const DEFAULT_MAX_GLOBAL_STREAMS = 64;
+const STREAM_LIMIT_RETRY_AFTER_SEC = 2;
 const DEFAULT_LOOKING_GLASS_BODY_BYTES = 2048; // 2 KB
 const DEFAULT_LOOKING_GLASS_RATE_LIMIT = 10; // req/min por IP
 const DEFAULT_LOOKING_GLASS_WINDOW_MS = 60_000;
@@ -34,21 +38,116 @@ function parsePositiveInt(value, fallback) {
   return Math.floor(num);
 }
 
-function resolveClientIp(req) {
-  const realIpHeader = req.headers['x-real-ip'];
-  const realIp = Array.isArray(realIpHeader) ? realIpHeader[0] : realIpHeader;
-  if (typeof realIp === 'string' && realIp.trim()) {
-    return realIp.trim();
+export function parseTrustProxy(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes';
+  }
+  return false;
+}
+
+export function normalizeClientIpString(raw) {
+  if (typeof raw !== 'string') return '';
+  let candidate = raw.trim();
+  if (!candidate) return '';
+
+  if (candidate.startsWith('[') && candidate.includes(']')) {
+    candidate = candidate.slice(1, candidate.indexOf(']'));
   }
 
-  const forwardedHeader = req.headers['x-forwarded-for'];
-  const forwardedRaw = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
-  if (typeof forwardedRaw === 'string' && forwardedRaw.trim()) {
-    const firstIp = forwardedRaw.split(',')[0].trim();
-    if (firstIp) return firstIp;
+  if (candidate.toLowerCase().startsWith('::ffff:')) {
+    const v4Candidate = candidate.slice(7);
+    if (net.isIP(v4Candidate) === 4) {
+      return v4Candidate;
+    }
   }
 
-  return req.socket?.remoteAddress || '';
+  if (net.isIP(candidate) !== 0) {
+    return candidate;
+  }
+
+  // Suporta formato IPv4:porta enviado por alguns proxies reversos
+  const ipv4PortMatch = candidate.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+  if (ipv4PortMatch && net.isIP(ipv4PortMatch[1]) === 4) {
+    return ipv4PortMatch[1];
+  }
+
+  return '';
+}
+
+function isTrustedProxySocketIp(rawIp) {
+  const ip = normalizeClientIpString(rawIp);
+  if (!ip) return false;
+
+  const family = net.isIP(ip);
+  if (family === 4) {
+    const parts = ip.split('.').map(Number);
+    const [a, b] = parts;
+    if (a === 127) return true; // Loopback 127.0.0.0/8
+    if (a === 10) return true; // RFC 1918 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true; // RFC 1918 172.16.0.0/12 (inclui bridge Docker)
+    if (a === 192 && b === 168) return true; // RFC 1918 192.168.0.0/16
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT interno 100.64.0.0/10
+    if (a === 169 && b === 254) return true; // Link-local 169.254.0.0/16
+    return false;
+  }
+
+  if (family === 6) {
+    const lower = ip.toLowerCase();
+    if (lower === '::1') return true; // Loopback IPv6
+    if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // ULA fc00::/7
+    if (
+      lower.startsWith('fe8') ||
+      lower.startsWith('fe9') ||
+      lower.startsWith('fea') ||
+      lower.startsWith('feb')
+    ) {
+      return true; // Link-local fe80::/10
+    }
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Resolve o endereço IP real do cliente com proteção contra falsificação de cabeçalhos.
+ * Só aceita `X-Real-IP` / `X-Forwarded-For` quando `trustProxy` está ativo E o socket
+ * par pertence a loopback ou rede privada confiável (ex.: Nginx/Caddy local ou bridge Docker).
+ *
+ * @param {import('node:http').IncomingMessage | { headers?: Record<string, any>, socket?: { remoteAddress?: string } }} req
+ * @param {{ trustProxy?: boolean | string }} [options]
+ * @returns {string}
+ */
+export function resolveClientIp(req, options = {}) {
+  const trustProxy = parseTrustProxy(options.trustProxy);
+  const rawRemote = typeof req?.socket?.remoteAddress === 'string' ? req.socket.remoteAddress.trim() : '';
+  const normalizedRemote = normalizeClientIpString(rawRemote) || rawRemote;
+
+  const isTrustedProxyPeer = Boolean(rawRemote) && isTrustedProxySocketIp(rawRemote);
+  if (trustProxy && isTrustedProxyPeer) {
+    const headers = req?.headers || {};
+    const realIpHeader = headers['x-real-ip'];
+    const realIpRaw = Array.isArray(realIpHeader) ? realIpHeader[0] : realIpHeader;
+    const validRealIp = normalizeClientIpString(realIpRaw);
+    if (validRealIp) {
+      return validRealIp;
+    }
+
+    const forwardedHeader = headers['x-forwarded-for'];
+    const forwardedRaw = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
+    if (typeof forwardedRaw === 'string' && forwardedRaw.trim()) {
+      const firstToken = forwardedRaw.split(',')[0].trim();
+      const validForwardedIp = normalizeClientIpString(firstToken);
+      if (validForwardedIp) {
+        return validForwardedIp;
+      }
+    }
+  }
+
+  return normalizedRemote;
 }
 
 function sendJson(res, statusCode, payload, commonHeaders, extraHeaders = {}) {
@@ -132,8 +231,11 @@ function resolveMetricRoute(pathname, method) {
  *   ispName?: string,
  *   serverLabel?: string,
  *   allowedOrigin?: string,
+ *   trustProxy?: boolean | string,
  *   maxDownloadBytes?: number,
  *   maxUploadBytes?: number,
+ *   maxStreamsPerIp?: number,
+ *   maxGlobalStreams?: number,
  *   lookingGlassRateLimit?: number,
  *   lookingGlassWindowMs?: number,
  *   lookingGlassLookup?: (host: string, opts: any) => Promise<any>,
@@ -162,6 +264,8 @@ export function createMeasurementServer(options = {}) {
       ? (options.allowedOrigin ?? process.env.ALLOWED_ORIGIN).trim()
       : '*';
 
+  const trustProxy = parseTrustProxy(options.trustProxy ?? process.env.TRUST_PROXY);
+
   const maxDownloadBytes = parsePositiveInt(
     options.maxDownloadBytes ?? process.env.MAX_DOWNLOAD_BYTES,
     DEFAULT_MAX_DOWNLOAD_BYTES
@@ -170,6 +274,68 @@ export function createMeasurementServer(options = {}) {
     options.maxUploadBytes ?? process.env.MAX_UPLOAD_BYTES,
     DEFAULT_MAX_UPLOAD_BYTES
   );
+  const maxStreamsPerIp = parsePositiveInt(
+    options.maxStreamsPerIp ?? process.env.MAX_STREAMS_PER_IP,
+    DEFAULT_MAX_STREAMS_PER_IP
+  );
+  const maxGlobalStreams = parsePositiveInt(
+    options.maxGlobalStreams ?? process.env.MAX_GLOBAL_STREAMS,
+    DEFAULT_MAX_GLOBAL_STREAMS
+  );
+
+  let activeGlobalStreams = 0;
+  /** @type {Map<string, number>} */
+  const activeStreamsByIp = new Map();
+
+  const acquireStreamSlot = (clientIp, req, res) => {
+    const ipKey = typeof clientIp === 'string' && clientIp.trim() ? clientIp.trim() : 'unknown';
+    const currentIpStreams = activeStreamsByIp.get(ipKey) || 0;
+
+    if (currentIpStreams >= maxStreamsPerIp) {
+      return {
+        allowed: false,
+        statusCode: 429,
+        code: 'TOO_MANY_STREAMS_PER_IP',
+        error: `Limite de ${maxStreamsPerIp} fluxos simultâneos por IP atingido.`,
+        retryAfterSec: STREAM_LIMIT_RETRY_AFTER_SEC
+      };
+    }
+
+    if (activeGlobalStreams >= maxGlobalStreams) {
+      return {
+        allowed: false,
+        statusCode: 503,
+        code: 'SERVER_BUSY',
+        error: 'Capacidade máxima de fluxos simultâneos do nó de medição atingida.',
+        retryAfterSec: STREAM_LIMIT_RETRY_AFTER_SEC + 1
+      };
+    }
+
+    activeGlobalStreams += 1;
+    activeStreamsByIp.set(ipKey, currentIpStreams + 1);
+
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      activeGlobalStreams = Math.max(0, activeGlobalStreams - 1);
+      const nextIpCount = (activeStreamsByIp.get(ipKey) || 1) - 1;
+      if (nextIpCount <= 0) {
+        activeStreamsByIp.delete(ipKey);
+      } else {
+        activeStreamsByIp.set(ipKey, nextIpCount);
+      }
+    };
+
+    req.once('aborted', release);
+    req.once('close', release);
+    req.once('error', release);
+    res.once('close', release);
+    res.once('error', release);
+    res.once('finish', release);
+
+    return { allowed: true, release };
+  };
 
   const rawMetricsEnabled = options.metricsEnabled ?? process.env.METRICS_ENABLED;
   const metricsEnabled = !(
@@ -202,11 +368,14 @@ export function createMeasurementServer(options = {}) {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+    'Access-Control-Expose-Headers': 'Server-Timing, X-TestAi-Route, Retry-After',
     'Access-Control-Max-Age': '86400',
-    'Timing-Allow-Origin': allowedOrigin
+    'Timing-Allow-Origin': allowedOrigin,
+    'X-TestAi-Route': 'on-net'
   };
 
   return http.createServer((req, res) => {
+    const reqStartNs = process.hrtime.bigint();
     const method = (req.method || 'GET').toUpperCase();
     let metricRoute = 'other';
 
@@ -222,8 +391,12 @@ export function createMeasurementServer(options = {}) {
         released = true;
         metrics.decActive(routeName);
       };
+      req.once('aborted', release);
+      req.once('close', release);
+      req.once('error', release);
       res.once('finish', release);
       res.once('close', release);
+      res.once('error', release);
       return release;
     };
 
@@ -274,7 +447,14 @@ export function createMeasurementServer(options = {}) {
     }
 
     if (pathname === '/api/ping' && (method === 'GET' || method === 'HEAD')) {
-      res.writeHead(204, commonHeaders);
+      const handlerDurMs = (Number(process.hrtime.bigint() - reqStartNs) / 1_000_000).toFixed(3);
+      res.writeHead(204, {
+        ...commonHeaders,
+        'Cache-Control': 'no-store, no-cache',
+        'Timing-Allow-Origin': '*',
+        'Server-Timing': `app;dur=${handlerDurMs}`,
+        'X-TestAi-Route': 'on-net'
+      });
       res.end();
       return;
     }
@@ -306,7 +486,41 @@ export function createMeasurementServer(options = {}) {
         return;
       }
 
-      trackActive('download');
+      if (totalBytes === 0) {
+        const handlerDurMs = (Number(process.hrtime.bigint() - reqStartNs) / 1_000_000).toFixed(3);
+        res.writeHead(200, {
+          ...commonHeaders,
+          'Cache-Control': 'no-store, no-cache',
+          'Timing-Allow-Origin': '*',
+          'Server-Timing': `app;dur=${handlerDurMs}`,
+          'X-TestAi-Route': 'on-net',
+          'Content-Type': 'application/octet-stream',
+          'Content-Encoding': 'identity',
+          'Content-Length': '0'
+        });
+        res.end();
+        return;
+      }
+
+      const clientIp = resolveClientIp(req, { trustProxy });
+      const slot = acquireStreamSlot(clientIp, req, res);
+      if (!slot.allowed) {
+        sendJson(
+          res,
+          slot.statusCode,
+          {
+            ok: false,
+            error: slot.error,
+            code: slot.code,
+            retryAfterSec: slot.retryAfterSec
+          },
+          commonHeaders,
+          { 'Retry-After': String(slot.retryAfterSec) }
+        );
+        return;
+      }
+
+      const releaseMetricActive = trackActive('download');
       res.writeHead(200, {
         ...commonHeaders,
         'Content-Type': 'application/octet-stream',
@@ -314,16 +528,14 @@ export function createMeasurementServer(options = {}) {
         'Content-Length': String(totalBytes)
       });
 
-      if (totalBytes === 0) {
-        res.end();
-        return;
-      }
-
       let sent = 0;
       let aborted = false;
       const markAborted = () => {
         aborted = true;
+        slot.release();
+        releaseMetricActive();
       };
+      req.once('aborted', markAborted);
       req.once('close', markAborted);
       res.once('close', markAborted);
 
@@ -342,6 +554,7 @@ export function createMeasurementServer(options = {}) {
           }
         }
         if (!res.writableEnded) {
+          req.removeListener('aborted', markAborted);
           req.removeListener('close', markAborted);
           res.removeListener('close', markAborted);
           res.end();
@@ -353,7 +566,28 @@ export function createMeasurementServer(options = {}) {
     }
 
     if (pathname === '/api/up' && method === 'POST') {
-      trackActive('upload');
+      const clientIp = resolveClientIp(req, { trustProxy });
+      const slot = acquireStreamSlot(clientIp, req, res);
+      if (!slot.allowed) {
+        sendJson(
+          res,
+          slot.statusCode,
+          {
+            ok: false,
+            error: slot.error,
+            code: slot.code,
+            retryAfterSec: slot.retryAfterSec
+          },
+          commonHeaders,
+          {
+            'Retry-After': String(slot.retryAfterSec),
+            Connection: 'close'
+          }
+        );
+        return;
+      }
+
+      const releaseMetricActive = trackActive('upload');
       let receivedBytes = 0;
       let exceeded = false;
       let responded = false;
@@ -362,6 +596,8 @@ export function createMeasurementServer(options = {}) {
         if (responded) return;
         responded = true;
         exceeded = true;
+        slot.release();
+        releaseMetricActive();
         sendJson(
           res,
           413,
@@ -391,6 +627,8 @@ export function createMeasurementServer(options = {}) {
       });
 
       req.on('error', () => {
+        slot.release();
+        releaseMetricActive();
         if (!responded && !res.writableEnded) {
           responded = true;
           res.destroy();
@@ -400,7 +638,7 @@ export function createMeasurementServer(options = {}) {
     }
 
     if (pathname === '/api/meta' && method === 'GET') {
-      const clientIp = resolveClientIp(req);
+      const clientIp = resolveClientIp(req, { trustProxy });
       sendJson(res, 200, { ispName, serverLabel, clientIp }, commonHeaders);
       return;
     }
@@ -411,7 +649,7 @@ export function createMeasurementServer(options = {}) {
     }
 
     if (pathname === '/api/looking-glass' && method === 'POST') {
-      const clientIp = resolveClientIp(req);
+      const clientIp = resolveClientIp(req, { trustProxy });
       const rateState = lookingGlassLimiter.check(clientIp);
       if (!rateState.allowed) {
         metrics.recordLookingGlassOutcome('rate_limited');

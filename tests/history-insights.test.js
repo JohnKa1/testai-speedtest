@@ -161,17 +161,23 @@ test('exportHistoryAsCsv e exportHistoryAsJson geram CSV escapado e JSON identad
 
   const csv = exportHistoryAsCsv(entries);
   const lines = csv.split('\n');
-  assert.equal(
-    lines[0],
-    'id,timestamp,ispName,serverLabel,measurementMode,downloadMbps,uploadMbps,pingMs,jitterMs,loadedDeltaMs,stabilityLabel'
-  );
+  assert.ok(lines[0].startsWith('schemaVersion,id,timestamp,ispName,serverLabel,routeType,measurementMode,'));
+  assert.ok(lines[0].includes('sustainedDownloadMbps'));
+  assert.ok(lines[0].includes('spikePeakMs'));
+  assert.ok(lines[0].includes('probeLossPct'));
+  assert.ok(lines[0].includes('stabilityLabel,stabilityTone,stabilityReason'));
   assert.ok(lines[1].includes('"ISP ""Fibra"", Sul"'));
   assert.ok(lines[1].includes('500.5'));
   assert.ok(lines[1].includes('Excelente'));
 
   const json = exportHistoryAsJson(entries);
   assert.ok(json.includes('\n  '));
-  assert.deepEqual(JSON.parse(json), entries);
+  const parsedJson = JSON.parse(json);
+  assert.equal(parsedJson.length, 1);
+  assert.equal(parsedJson[0].schemaVersion, 2);
+  assert.equal(parsedJson[0].id, 'run-1');
+  assert.equal(parsedJson[0].ispName, 'ISP "Fibra", Sul');
+  assert.equal(parsedJson[0].stability.label, 'Excelente');
 });
 
 test('evaluateUsageProfiles classifica rede excelente, intermediária e bufferbloat severo', () => {

@@ -16,7 +16,8 @@ describe('TestAi — Integridade de UI, Contratos DOM e Tokens CSS', () => {
     assert.ok(html.includes('tabindex="0"'));
     assert.ok(html.includes('data-tip='));
     assert.ok(html.includes('PICO OBSERVADO'));
-    assert.ok(html.includes('Upload (Média)'));
+    assert.ok(html.includes('Upload (P90)'));
+    assert.ok(html.includes('id="routeOriginBadge"'));
     assert.ok(html.includes('class="empty-state-text"'));
   });
 

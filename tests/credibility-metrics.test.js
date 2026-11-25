@@ -183,7 +183,32 @@ describe('TestAi — Credibilidade das Métricas, Estatística Canônica e Picos
     assert.equal(stability.tone, 'good');
   });
 
-  it('cenário 2: mediana baixa (Δ +0 ms) com 1 pico isolado (270 ms no upload) mantém selo principal e cita pico + fase', () => {
+  it('cenário 2: Spike Guard diferencia pico isolado leve (180 ms -> Excelente com nota) de pico isolado severo (270 ms -> Moderada / aviso)', () => {
+    // 2a. Pico isolado leve (+169 ms acima de 11 ms, abaixo do corte severo de +250 ms)
+    const mildIsolatedResult = createFixtureResult({
+      pingMs: 11,
+      dlDeltaMs: 0,
+      ulDeltaMs: 0,
+      dlLatSamples: [11, 11, 12, 11, 10, 11, 11, 11],
+      ulLatSamples: [11, 10, 11, 180, 11, 11, 12, 11]
+    });
+
+    assert.equal(mildIsolatedResult.loadedSpikes.status, 'isolated');
+    assert.equal(mildIsolatedResult.loadedSpikes.hasSevereSpike, false);
+    assert.equal(mildIsolatedResult.loadedSpikes.peakMs, 180);
+    assert.equal(mildIsolatedResult.loadedSpikes.peakPhase, 'upload');
+
+    const mildDiag = evaluateConnection(mildIsolatedResult);
+    assert.equal(mildDiag.code, DIAGNOSIS_CATALOG.EXCELLENT);
+    assert.equal(mildDiag.severity, 'good');
+    assert.match(mildDiag.summary, /pico isolado de 180 ms durante o upload/);
+
+    const mildStability = evaluateSimpleStability(mildIsolatedResult);
+    assert.equal(mildStability.label, 'Excelente');
+    assert.equal(mildStability.tone, 'good');
+    assert.match(mildStability.sub, /180 ms/);
+
+    // 2b. Pico isolado severo (270 ms no upload = +259 ms >= 250 ms): Spike Guard bloqueia "Excelente"
     const isolatedResult = createFixtureResult({
       pingMs: 11,
       dlDeltaMs: 0,
@@ -193,21 +218,21 @@ describe('TestAi — Credibilidade das Métricas, Estatística Canônica e Picos
     });
 
     assert.equal(isolatedResult.loadedSpikes.status, 'isolated');
+    assert.equal(isolatedResult.loadedSpikes.hasSevereSpike, true);
     assert.equal(isolatedResult.loadedSpikes.spikeCount, 1);
     assert.equal(isolatedResult.loadedSpikes.peakMs, 270);
     assert.equal(isolatedResult.loadedSpikes.peakPhase, 'upload');
 
     const diag = evaluateConnection(isolatedResult);
-    assert.equal(diag.code, DIAGNOSIS_CATALOG.EXCELLENT);
-    assert.equal(diag.severity, 'good');
-    assert.match(diag.summary, /pico isolado de 270 ms durante o upload/);
+    assert.equal(diag.code, DIAGNOSIS_CATALOG.POSSIBLE_CONGESTION);
+    assert.equal(diag.severity, 'warning');
+    assert.match(diag.summary, /pico severo de 270 ms durante o upload/);
     assert.equal(diag.summary.includes('mínima variação sob saturação'), false);
 
     const stability = evaluateSimpleStability(isolatedResult);
-    assert.equal(stability.label, 'Excelente');
-    assert.equal(stability.tone, 'good');
-    assert.match(stability.sub, /270 ms/);
-    assert.match(stability.sub, /upload/);
+    assert.equal(stability.label, 'Moderada');
+    assert.equal(stability.tone, 'warning');
+    assert.match(stability.sub, /Pico severo de 270 ms \(upload\)/);
   });
 
   it('cenário 3: mediana baixa com picos recorrentes (>= 3 amostras ou >= 25%) rebaixa classificação e remove "mínima variação"', () => {

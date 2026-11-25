@@ -6,7 +6,8 @@
  */
 
 import { GAMING_THRESHOLDS } from '../config/speedtest.config.js';
-import { METRIC_STATUS } from '../utils/validators.js';
+import { evaluateLoadedLatencySpikes, evaluateProbeLoss } from './stability-rules.js';
+import { isNonNegativeNumber, METRIC_STATUS } from '../utils/validators.js';
 import { formatDeltaMs, formatLatency } from '../utils/formatters.js';
 
 /**
@@ -54,6 +55,18 @@ export function evaluateGamingReadiness(result, customThresholds = {}) {
 
   const maxDelta = Math.max(dlDelta ?? 0, ulDelta ?? 0);
   const maxLoadedJitter = Math.max(jitter ?? 0, dlJitter ?? 0, ulJitter ?? 0);
+  const rawSpikes = result?.loadedSpikes;
+  const loadedSpikes =
+    rawSpikes && typeof rawSpikes.hasSevereSpike === 'boolean'
+      ? rawSpikes
+      : evaluateLoadedLatencySpikes(result);
+  const probeLoss = evaluateProbeLoss(result);
+  const hasRecurrentSpikes =
+    loadedSpikes.status === 'recurrent' && isNonNegativeNumber(loadedSpikes.peakMs);
+  const hasSevereSpike =
+    Boolean(loadedSpikes.hasSevereSpike) && isNonNegativeNumber(loadedSpikes.peakMs);
+  const hasLoadInstability =
+    hasRecurrentSpikes || hasSevereSpike || probeLoss.hasRelevantLoss;
 
   let verdictCode = 'competitive';
   /** @type {'good' | 'warning' | 'danger'} */
@@ -61,26 +74,35 @@ export function evaluateGamingReadiness(result, customThresholds = {}) {
   let badge = 'PRONTO PARA COMPETITIVO';
   let title = 'Características altamente favoráveis para jogos online';
   let summary =
-    'Baixa latência de resposta até a borda da rede, jitter reduzido e bom controle de fila mesmo quando a banda é exigida.';
+    'Baixa latência de resposta até a borda de medição, jitter reduzido e bom controle de fila mesmo quando a banda é exigida.';
 
-  if (ping > t.pingLagRiskMax || (jitter !== null && jitter > 25)) {
+  if (
+    ping > t.pingLagRiskMax ||
+    (jitter !== null && jitter > 25) ||
+    probeLoss.isSevereLoss
+  ) {
     verdictCode = 'unfavorable';
     severity = 'danger';
     badge = 'DESFAVORÁVEL PARA COMPETITIVO';
     title = 'Risco elevado de atraso e perda de sincronia em partidas';
-    summary =
-      'A latência base ou a oscilação entre pacotes está acima do recomendado para jogos de ação rápida, podendo causar atraso perceptível no registro de comandos.';
+    summary = probeLoss.isSevereLoss
+      ? `Perda acentuada de sondas (${Math.round(probeLoss.worstLossPct)}% na fase ${probeLoss.worstPhase}) indica descarte ou retenção crítica sob carga, causando travamentos severos em partidas.`
+      : 'A latência base ou a oscilação entre pacotes está acima do recomendado para jogos de ação rápida, podendo causar atraso perceptível no registro de comandos.';
   } else if (
     ping > t.pingPlayableMax ||
     (jitter !== null && jitter > t.jitterPlayableMax) ||
-    maxDelta > t.loadedDeltaPlayableMax
+    maxDelta > t.loadedDeltaPlayableMax ||
+    hasLoadInstability
   ) {
     verdictCode = 'lag-under-load';
     severity = 'warning';
     badge = 'RISCO DE LAG SOB CARGA';
     title = 'Jogável em rede livre, mas sensível a uso simultâneo';
-    summary =
-      'Embora a conexão suporte partidas online, variações de jitter ou aumento de latência durante downloads/uploads podem provocar picos de ping (lag spikes) se outros dispositivos usarem a rede.';
+    summary = probeLoss.isModerateLoss
+      ? `Foram registradas perdas/timeouts parciais nas sondas sob carga (${Math.round(probeLoss.worstLossPct)}% no ${probeLoss.worstPhase}), podendo gerar lag spikes quando a rede estiver ocupada.`
+      : hasRecurrentSpikes || hasSevereSpike
+        ? `Foram detectados picos de latência de até ${Math.round(loadedSpikes.peakMs)} ms durante o ${loadedSpikes.peakPhase}, podendo causar engasgos (rubberbanding) se outros dispositivos usarem a banda.`
+        : 'Embora a conexão suporte partidas online, variações de jitter ou aumento de latência durante downloads/uploads podem provocar picos de ping (lag spikes) se outros dispositivos usarem a rede.';
   } else if (
     ping > t.pingCompetitiveMax ||
     (jitter !== null && jitter > t.jitterCompetitiveMax) ||
@@ -94,6 +116,11 @@ export function evaluateGamingReadiness(result, customThresholds = {}) {
       'Os indicadores de latência e estabilidade atendem bem à maioria dos títulos online, com pequena margem de variação sob carga intensa.';
   }
 
+  const routeTargetLabel =
+    result?.routeType === 'on-net'
+      ? 'servidor local On-Net do provedor'
+      : 'servidor de medição ativo';
+
   const pillars = [
     {
       label: 'Resposta Base (Ping Ocioso)',
@@ -104,7 +131,7 @@ export function evaluateGamingReadiness(result, customThresholds = {}) {
           : ping <= t.pingPlayableMax
             ? 'Adequado'
             : 'Elevado',
-      detail: 'Tempo de ida e volta até o PoP Cloudflare sem carga concorrente.'
+      detail: `Tempo de ida e volta até o ${routeTargetLabel} sem carga concorrente.`
     },
     {
       label: 'Consistência Temporal (Jitter)',
@@ -148,17 +175,19 @@ export function evaluateGamingReadiness(result, customThresholds = {}) {
       fit:
         ping <= t.pingCompetitiveMax &&
         (jitter ?? 0) <= t.jitterCompetitiveMax &&
-        maxDelta <= t.loadedDeltaPlayableMax
+        maxDelta <= t.loadedDeltaPlayableMax &&
+        !hasLoadInstability
           ? 'Alta aderência'
-          : ping <= t.pingPlayableMax
+          : ping <= t.pingPlayableMax && !probeLoss.isSevereLoss
             ? 'Viável com rede dedicada'
             : 'Sujeito a atraso competitivo',
       tone:
         ping <= t.pingCompetitiveMax &&
         (jitter ?? 0) <= t.jitterCompetitiveMax &&
-        maxDelta <= t.loadedDeltaPlayableMax
+        maxDelta <= t.loadedDeltaPlayableMax &&
+        !hasLoadInstability
           ? 'good'
-          : ping <= t.pingPlayableMax
+          : ping <= t.pingPlayableMax && !probeLoss.isSevereLoss
             ? 'warning'
             : 'danger',
       note: 'Exigem jitter mínimo e ausência de picos durante trocas de tiros. Utilize cabo Ethernet sempre que possível.'

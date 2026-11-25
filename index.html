@@ -82,7 +82,7 @@
               <span class="btn-label">Instalar App</span>
             </button>
             <span class="pill hidden" id="ispNamePill"></span>
-            <span class="pill mono adv-only" id="serverInfo">Cloudflare Edge</span>
+            <span class="pill mono adv-only" id="serverInfo">Inicializando rota...</span>
           </div>
         </div>
       </header>
@@ -142,7 +142,22 @@
           </div>
         </section>
 
-        <!-- BARRA DE PROGRESSO COMPARTILHADA -->
+        <!-- BARRA DE PROGRESSO COMPARTILHADA + SELO DISCRETO DE ROTA -->
+        <div class="route-status-bar" id="routeStatusBar">
+          <span
+            class="route-origin-badge tone-warning"
+            id="routeOriginBadge"
+            data-route="off-net-fallback"
+            role="status"
+            tabindex="0"
+            title="Medição Off-Net: o teste utiliza a borda externa Cloudflare Anycast (modo demonstração ou fallback, sujeito a rotas externas ao seu provedor)."
+            aria-label="Rota Externa Cloudflare. Medição Off-Net até a borda Cloudflare Anycast."
+          >
+            <span class="route-origin-dot" aria-hidden="true"></span>
+            <span id="routeOriginText">Rota Externa • Cloudflare</span>
+          </span>
+        </div>
+
         <section
           class="progress-wrap"
           id="progressSection"
@@ -304,7 +319,7 @@
                 <span
                   class="simple-stat-label"
                   tabindex="0"
-                  data-tip="Média real da velocidade de download medida durante o teste; o pico aparece como referência secundária."
+                  data-tip="Velocidade principal de download conforme o modo ativo (P90 comercial ou P50 sustentado, após o aquecimento TCP); o pico aparece como referência secundária."
                 >
                   Download
                 </span>
@@ -316,7 +331,7 @@
                 <span
                   class="simple-stat-label"
                   tabindex="0"
-                  data-tip="Média real da velocidade de upload medida durante o teste; o pico aparece como referência secundária."
+                  data-tip="Velocidade principal de upload conforme o modo ativo (P90 comercial ou P50 sustentado, após o aquecimento TCP); o pico aparece como referência secundária."
                 >
                   Upload
                 </span>
@@ -452,7 +467,7 @@
                     <span
                       class="avg-title"
                       tabindex="0"
-                      data-tip="Maior amostra pontual registrada durante o teste (referência secundária; o valor principal exibe a média)."
+                      data-tip="Maior amostra pontual registrada durante o teste (referência secundária; o placar principal exibe P90 comercial ou P50 sustentado)."
                     >
                       PICO OBSERVADO
                     </span>
@@ -469,7 +484,7 @@
                       tabindex="0"
                       data-tip="Taxa principal de envio coletada conforme o modo ativo (P90 comercial ou P50 sustentado)."
                     >
-                      Upload (Média)
+                      Upload (P90)
                     </span>
                     <span class="value" id="uploadValue">—</span>
                     <span class="meta" id="uploadPeakMeta">Mbps</span>
@@ -479,7 +494,7 @@
                     <span
                       class="label"
                       tabindex="0"
-                      data-tip="Latência mediana (RTT) em repouso até o nó Cloudflare mais próximo."
+                      data-tip="Latência mediana (RTT) em repouso até o servidor de medição ativo (On-Net do provedor ou borda externa)."
                     >
                       Ping Ocioso
                     </span>
@@ -733,7 +748,7 @@
 
               <div class="method-disclaimer">
                 <strong>Escopo da medição via navegador:</strong>
-                Testes HTTP/TLS refletem o percurso até o nó Anycast mais próximo da Cloudflare e estão sujeitos ao escalonamento de janela TCP e aceleração TLS do dispositivo. Em jogos online, o ping final também varia conforme a região física do servidor da partida.
+                Testes HTTP/TLS refletem o percurso até o servidor de medição ativo (infraestrutura local On-Net do provedor ou borda externa em modo demonstração/fallback) e estão sujeitos ao escalonamento de janela TCP e processamento TLS do dispositivo. Em jogos online, o ping final também varia conforme a região física do servidor da partida.
               </div>
             </article>
           </section>

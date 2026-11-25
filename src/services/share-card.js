@@ -3,9 +3,14 @@
  * para WhatsApp / Web Share API com fallback para download direto em desktop.
  */
 
-import { DEFAULT_RUNTIME_CONFIG } from './runtime-config.js';
+import { DEFAULT_RUNTIME_CONFIG, resolveRuntimeRoute } from './runtime-config.js';
 import { evaluateSimpleStability } from '../diagnostics/capability-advisor.js';
 import {
+  evaluateLoadedLatencySpikes,
+  evaluateProbeLoss
+} from '../diagnostics/stability-rules.js';
+import {
+  computeCoherentLatencyDeltaMs,
   formatDeltaMs,
   formatMetricWithUnit,
   resolvePrimaryAndPeakSpeed
@@ -124,23 +129,56 @@ function extractShareCardData(result, runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
 
   const dlDelta =
     m.downloadLatencyDelta?.status === METRIC_STATUS.MEASURED
-      ? m.downloadLatencyDelta.value
+      ? computeCoherentLatencyDeltaMs(
+          m.ping?.value,
+          m.downloadLatency?.value,
+          m.downloadLatencyDelta.value
+        )
       : null;
   const ulDelta =
     m.uploadLatencyDelta?.status === METRIC_STATUS.MEASURED
-      ? m.uploadLatencyDelta.value
+      ? computeCoherentLatencyDeltaMs(
+          m.ping?.value,
+          m.uploadLatency?.value,
+          m.uploadLatencyDelta.value
+        )
       : null;
   const validDeltas = [dlDelta, ulDelta].filter(isNonNegativeNumber);
   const maxDelta = validDeltas.length > 0 ? Math.max(...validDeltas) : null;
   const deltaText = formatDeltaMs(maxDelta);
 
+  const routeType =
+    result?.routeType === 'on-net' || result?.routeType === 'off-net-fallback'
+      ? result.routeType
+      : resolveRuntimeRoute(cfg);
+  const routeModeLabel =
+    routeType === 'on-net' ? 'Servidor Local (On-Net)' : 'Cloudflare Edge (Off-Net)';
+
   const stability = evaluateSimpleStability(result, Boolean(result?.incomplete));
+  const rawSpikes = result?.loadedSpikes;
+  const loadedSpikes =
+    rawSpikes && typeof rawSpikes.hasSevereSpike === 'boolean'
+      ? rawSpikes
+      : evaluateLoadedLatencySpikes(result);
+  const probeLoss = evaluateProbeLoss(result);
+
+  let loadAnomalyNote = '';
+  if (probeLoss.hasRelevantLoss) {
+    loadAnomalyNote = `Perda de sondas: ${Math.round(probeLoss.worstLossPct)}% (${probeLoss.worstPhase})`;
+  } else if (loadedSpikes.status === 'recurrent' && loadedSpikes.peakMs !== null) {
+    loadAnomalyNote = `Picos sob carga: até ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase})`;
+  } else if (loadedSpikes.hasSevereSpike && loadedSpikes.peakMs !== null) {
+    loadAnomalyNote = `Pico severo: ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase})`;
+  }
+
   const d = resolveResultDate(result);
   const dateTimeLabel = `${padTwo(d.getDate())}/${padTwo(d.getMonth() + 1)}/${d.getFullYear()} ${padTwo(d.getHours())}:${padTwo(d.getMinutes())}`;
 
   return {
     ispName,
     serverLabel,
+    routeType,
+    routeModeLabel,
     isCommercial,
     dlMeasured,
     ulMeasured,
@@ -154,7 +192,9 @@ function extractShareCardData(result, runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
     jitterText,
     deltaText,
     stabilityLabel: stability.label,
+    stabilitySub: stability.sub,
     stabilityTone: stability.tone,
+    loadAnomalyNote,
     dateTimeLabel
   };
 }
@@ -173,16 +213,24 @@ export function buildShareSummaryText(result, runtimeConfig = DEFAULT_RUNTIME_CO
       ? `${data.ispName} • TestAi`
       : 'TestAi — Medidor de Velocidade';
   const modeLabel = data.isCommercial ? 'Comercial (P90)' : 'Sustentado (P50)';
+  const serverDisplay =
+    data.serverLabel === 'Cloudflare Edge' && data.routeType !== 'on-net'
+      ? `${data.routeModeLabel}`
+      : `${data.serverLabel} • ${data.routeModeLabel}`;
 
-  return [
+  const lines = [
     headerBrand,
-    `Servidor: ${data.serverLabel} (${data.dateTimeLabel})`,
+    `Servidor: ${serverDisplay} (${data.dateTimeLabel})`,
     `Modo: ${modeLabel}`,
     `Download: ${data.dlPrimaryText} (${data.dlSubText})`,
     `Upload: ${data.ulPrimaryText} (${data.ulSubText})`,
     `Ping: ${data.pingText} | Jitter: ${data.jitterText}`,
-    `Latência sob carga: ${data.deltaText} | Estabilidade: ${data.stabilityLabel}`
-  ].join('\n');
+    `Latência sob carga: ${data.deltaText} | Estabilidade: ${data.stabilityLabel} (${data.stabilitySub})`
+  ];
+  if (data.loadAnomalyNote) {
+    lines.push(`Alerta sob carga: ${data.loadAnomalyNote}`);
+  }
+  return lines.join('\n');
 }
 
 function drawRoundedRect(ctx, x, y, width, height, radius) {
@@ -244,7 +292,7 @@ function drawHeroMetricCard(ctx, opts) {
 }
 
 function drawQualityCard(ctx, opts) {
-  const { x, y, width, height, label, valueText, valueColor = '#F8FAFC' } = opts;
+  const { x, y, width, height, label, valueText, subText = '', valueColor = '#F8FAFC' } = opts;
 
   drawRoundedRect(ctx, x, y, width, height, 22);
   ctx.fillStyle = 'rgba(30, 41, 59, 0.68)';
@@ -256,11 +304,17 @@ function drawQualityCard(ctx, opts) {
   ctx.textAlign = 'left';
   ctx.fillStyle = '#94A3B8';
   ctx.font = '600 20px Inter, system-ui, sans-serif';
-  ctx.fillText(label, x + 28, y + 52);
+  ctx.fillText(label, x + 28, y + 48);
 
   ctx.fillStyle = valueColor;
-  ctx.font = '700 40px "JetBrains Mono", monospace';
-  ctx.fillText(valueText, x + 28, y + 114);
+  ctx.font = '700 38px "JetBrains Mono", monospace';
+  ctx.fillText(valueText, x + 28, subText ? y + 100 : y + 112);
+
+  if (subText) {
+    ctx.fillStyle = '#CBD5E1';
+    ctx.font = '500 18px Inter, system-ui, sans-serif';
+    ctx.fillText(subText, x + 28, y + 132);
+  }
 }
 
 /**
@@ -328,7 +382,11 @@ export async function renderShareCardBlob(
 
   ctx.fillStyle = '#94A3B8';
   ctx.font = '500 24px Inter, system-ui, sans-serif';
-  ctx.fillText(`Servidor: ${data.serverLabel}`, pad, 188);
+  const cardServerLine =
+    data.serverLabel === 'Cloudflare Edge' && data.routeType !== 'on-net'
+      ? `Servidor: ${data.routeModeLabel}`
+      : `Servidor: ${data.serverLabel} • ${data.routeModeLabel}`;
+  ctx.fillText(cardServerLine, pad, 188);
 
   ctx.textAlign = 'right';
   ctx.fillStyle = '#CBD5E1';
@@ -412,6 +470,7 @@ export async function renderShareCardBlob(
     height: cardH,
     label: 'ESTABILIDADE',
     valueText: data.stabilityLabel,
+    subText: data.loadAnomalyNote || data.stabilitySub,
     valueColor: resolveToneColor(data.stabilityTone)
   });
 

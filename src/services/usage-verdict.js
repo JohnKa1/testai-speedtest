@@ -5,6 +5,11 @@
  */
 
 import { evaluateSimpleStability } from '../diagnostics/capability-advisor.js';
+import {
+  evaluateLoadedLatencySpikes,
+  evaluateProbeLoss,
+  STABILITY_RULES
+} from '../diagnostics/stability-rules.js';
 import { isNonNegativeNumber, METRIC_STATUS } from '../utils/validators.js';
 
 /**
@@ -48,7 +53,7 @@ function resolveSustainedDownload(result) {
   return readMeasuredMetric(result?.metrics?.download);
 }
 
-function evaluateFpsGaming(pingMs, jitterMs, loadedDeltaMs) {
+function evaluateFpsGaming(pingMs, jitterMs, loadedDeltaMs, loadedSpikes, probeLoss) {
   if (!isNonNegativeNumber(pingMs)) {
     return {
       id: 'fps-gaming',
@@ -64,16 +69,32 @@ function evaluateFpsGaming(pingMs, jitterMs, loadedDeltaMs) {
 
   const effectiveJitter = isNonNegativeNumber(jitterMs) ? jitterMs : 0;
   const effectiveDelta = isNonNegativeNumber(loadedDeltaMs) ? loadedDeltaMs : 0;
+  const hasRecurrentSpikes =
+    loadedSpikes?.status === 'recurrent' && isNonNegativeNumber(loadedSpikes?.peakMs);
+  const hasSevereSpike =
+    Boolean(loadedSpikes?.hasSevereSpike) && isNonNegativeNumber(loadedSpikes?.peakMs);
 
-  if (effectiveDelta >= 50 || pingMs > 60 || effectiveJitter > 15) {
+  if (
+    probeLoss?.isSevereLoss ||
+    effectiveDelta >= STABILITY_RULES.loadedDeltaFpsAttentionMinMs ||
+    pingMs > 60 ||
+    effectiveJitter > STABILITY_RULES.idleJitterFpsAttentionMinMs ||
+    hasSevereSpike
+  ) {
     let reason = `Ping alto em repouso (${pingMs.toFixed(0)} ms).`;
     let headroomLabel = `Ping ${pingMs.toFixed(0)} ms (alvo competitivo < 45 ms)`;
-    if (effectiveDelta >= 50) {
+    if (probeLoss?.isSevereLoss) {
+      reason = `Perda de ${Math.round(probeLoss.worstLossPct)}% nas sondas (${probeLoss.worstPhase}) compromete partidas.`;
+      headroomLabel = 'Perda de respostas sob carga intensa';
+    } else if (effectiveDelta >= STABILITY_RULES.loadedDeltaFpsAttentionMinMs) {
       reason = `Latência sobe +${effectiveDelta.toFixed(0)} ms sob carga (bufferbloat).`;
-      headroomLabel = `Atraso extra sob carga reduz estabilidade`;
-    } else if (effectiveJitter > 15) {
+      headroomLabel = 'Atraso extra sob carga reduz estabilidade';
+    } else if (hasSevereSpike) {
+      reason = `Pico severo de ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase}) gera travamento em partidas.`;
+      headroomLabel = 'Pico agudo detectado sob tráfego intenso';
+    } else if (effectiveJitter > STABILITY_RULES.idleJitterFpsAttentionMinMs) {
       reason = `Jitter elevado (${effectiveJitter.toFixed(1)} ms) causa instabilidade de mira.`;
-      headroomLabel = `Oscilação alta no tempo de resposta`;
+      headroomLabel = 'Oscilação alta no tempo de resposta';
     }
     return {
       id: 'fps-gaming',
@@ -87,7 +108,27 @@ function evaluateFpsGaming(pingMs, jitterMs, loadedDeltaMs) {
     };
   }
 
-  if (pingMs <= 25 && effectiveJitter <= 5 && effectiveDelta < 20) {
+  if (hasRecurrentSpikes || probeLoss?.isModerateLoss) {
+    const spikeReason = probeLoss?.isModerateLoss
+      ? `Sondas sob carga tiveram perda/timeout (${Math.round(probeLoss.worstLossPct)}% no ${probeLoss.worstPhase}).`
+      : `Picos recorrentes de até ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase}) sob uso intenso.`;
+    return {
+      id: 'fps-gaming',
+      title: 'Jogos FPS',
+      icon: /** @type {'gamepad'} */ ('gamepad'),
+      level: /** @type {UsageVerdictLevel} */ ('bom'),
+      label: /** @type {UsageVerdictLabel} */ ('Bom'),
+      reason: spikeReason,
+      headroomPct: 48,
+      headroomLabel: 'Jogável com rede livre · evite downloads paralelos'
+    };
+  }
+
+  if (
+    pingMs <= STABILITY_RULES.idlePingCompetitiveMaxMs &&
+    effectiveJitter <= STABILITY_RULES.idleJitterCompetitiveMaxMs &&
+    effectiveDelta < 20
+  ) {
     const pingMargin = Math.max(0, Math.min(1, (60 - pingMs) / 50));
     const loadMargin = Math.max(0, Math.min(1, (50 - effectiveDelta) / 50));
     return {
@@ -114,7 +155,7 @@ function evaluateFpsGaming(pingMs, jitterMs, loadedDeltaMs) {
   };
 }
 
-function evaluateVideoCalls(uploadMbps, loadedDeltaMs) {
+function evaluateVideoCalls(uploadMbps, loadedDeltaMs, loadedSpikes, probeLoss) {
   if (!isNonNegativeNumber(uploadMbps)) {
     return {
       id: 'video-calls',
@@ -129,10 +170,15 @@ function evaluateVideoCalls(uploadMbps, loadedDeltaMs) {
   }
 
   const effectiveDelta = isNonNegativeNumber(loadedDeltaMs) ? loadedDeltaMs : 0;
+  const hasRecurrentSpikes =
+    loadedSpikes?.status === 'recurrent' && isNonNegativeNumber(loadedSpikes?.peakMs);
+  const hasSevereSpike =
+    Boolean(loadedSpikes?.hasSevereSpike) && isNonNegativeNumber(loadedSpikes?.peakMs);
 
-  if (uploadMbps < 10 || effectiveDelta >= 60) {
-    const reason =
-      uploadMbps < 10
+  if (uploadMbps < 10 || effectiveDelta >= 60 || probeLoss?.isSevereLoss) {
+    const reason = probeLoss?.isSevereLoss
+      ? `Perda de ${Math.round(probeLoss.worstLossPct)}% nas sondas (${probeLoss.worstPhase}) pode congelar voz e vídeo.`
+      : uploadMbps < 10
         ? `Upload reduzido (${uploadMbps.toFixed(1)} Mbps) pode travar imagem HD.`
         : `Atraso sob carga (+${effectiveDelta.toFixed(0)} ms) pode gerar picotes na voz.`;
     return {
@@ -145,6 +191,22 @@ function evaluateVideoCalls(uploadMbps, loadedDeltaMs) {
       headroomPct: uploadMbps < 10 ? clampPercent(Math.max(14, (uploadMbps / 10) * 32)) : 32,
       headroomLabel:
         uploadMbps < 10 ? 'Abaixo dos 10 Mbps recomendados' : 'Atraso alto durante envios'
+    };
+  }
+
+  if (hasRecurrentSpikes || hasSevereSpike || probeLoss?.isModerateLoss) {
+    const detailReason = probeLoss?.isModerateLoss
+      ? `Upload de ${uploadMbps.toFixed(1)} Mbps, mas houve perda/timeout parcial de sondas sob carga.`
+      : `Upload de ${uploadMbps.toFixed(1)} Mbps, mas picos de até ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase}) exigem cautela com downloads paralelos.`;
+    return {
+      id: 'video-calls',
+      title: 'Videochamadas',
+      icon: /** @type {'video'} */ ('video'),
+      level: /** @type {UsageVerdictLevel} */ ('bom'),
+      label: /** @type {UsageVerdictLabel} */ ('Bom'),
+      reason: detailReason,
+      headroomPct: 54,
+      headroomLabel: 'Estável sem transferências pesadas simultâneas'
     };
   }
 
@@ -255,10 +317,16 @@ export function evaluateUsageProfiles(result) {
   const uploadMbps = readMeasuredMetric(m.upload);
   const sustainedDownloadMbps = resolveSustainedDownload(result);
   const stability = evaluateSimpleStability(result, Boolean(result?.incomplete));
+  const rawSpikes = result?.loadedSpikes;
+  const loadedSpikes =
+    rawSpikes && typeof rawSpikes.hasSevereSpike === 'boolean'
+      ? rawSpikes
+      : evaluateLoadedLatencySpikes(result);
+  const probeLoss = evaluateProbeLoss(result);
 
   return [
-    evaluateFpsGaming(pingMs, jitterMs, loadedDeltaMs),
-    evaluateVideoCalls(uploadMbps, loadedDeltaMs),
+    evaluateFpsGaming(pingMs, jitterMs, loadedDeltaMs, loadedSpikes, probeLoss),
+    evaluateVideoCalls(uploadMbps, loadedDeltaMs, loadedSpikes, probeLoss),
     evaluateStreaming4k(sustainedDownloadMbps, stability)
   ];
 }

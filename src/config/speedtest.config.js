@@ -119,6 +119,7 @@ export const DIAGNOSTIC_THRESHOLDS = {
 
   // Aumento de latência sob carga (ΔRTT = loaded - idle, ms)
   loadedDeltaGoodMax: 20,
+  loadedDeltaModerateMin: 30,
   loadedDeltaModerateMax: 55,
   loadedDeltaBufferbloatMin: 60,
 

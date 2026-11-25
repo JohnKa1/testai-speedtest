@@ -6,8 +6,8 @@ import {
   clearElement,
   createEl,
   formatBytes,
+  formatCoherentDeltaMs,
   formatDateTime,
-  formatDeltaMs,
   formatDuration,
   formatMetricWithUnit,
   resolvePrimaryAndPeakSpeed,
@@ -266,7 +266,7 @@ export function renderTechnicalPanel(result) {
       name: 'Latência sob Download (P50)',
       value:
         m.downloadLatency.status === METRIC_STATUS.MEASURED
-          ? `${formatMetricWithUnit(m.downloadLatency.value, 'ms', 1, m.downloadLatency.status)} (${formatDeltaMs(m.downloadLatencyDelta.value)})`
+          ? `${formatMetricWithUnit(m.downloadLatency.value, 'ms', 1, m.downloadLatency.status)} (${formatCoherentDeltaMs(m.ping.value, m.downloadLatency.value, m.downloadLatencyDelta.value)})`
           : formatMetricWithUnit(m.downloadLatency.value, 'ms', 1, m.downloadLatency.status),
       samples: s.downloadLatency?.count ?? 0,
       dist: formatDist(s.downloadLatency, 1),
@@ -276,7 +276,7 @@ export function renderTechnicalPanel(result) {
       name: 'Latência sob Upload (P50)',
       value:
         m.uploadLatency.status === METRIC_STATUS.MEASURED
-          ? `${formatMetricWithUnit(m.uploadLatency.value, 'ms', 1, m.uploadLatency.status)} (${formatDeltaMs(m.uploadLatencyDelta.value)})`
+          ? `${formatMetricWithUnit(m.uploadLatency.value, 'ms', 1, m.uploadLatency.status)} (${formatCoherentDeltaMs(m.ping.value, m.uploadLatency.value, m.uploadLatencyDelta.value)})`
           : formatMetricWithUnit(m.uploadLatency.value, 'ms', 1, m.uploadLatency.status),
       samples: s.uploadLatency?.count ?? 0,
       dist: formatDist(s.uploadLatency, 1),

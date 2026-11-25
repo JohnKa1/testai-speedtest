@@ -360,10 +360,10 @@ describe('TestAi — Motor de Medição, Formatadores e Persistência', () => {
       assert.ok(finishedResult.metrics.download.value > 0);
       assert.ok(finishedResult.metrics.upload.value > 0);
       assert.ok(
-        Math.abs(finishedResult.metrics.download.value - finishedResult.stats.download.p50) < 1e-6
+        Math.abs(finishedResult.metrics.download.value - finishedResult.stats.download.p90) < 1e-6
       );
       assert.ok(
-        Math.abs(finishedResult.metrics.upload.value - finishedResult.stats.upload.p50) < 1e-6
+        Math.abs(finishedResult.metrics.upload.value - finishedResult.stats.upload.p90) < 1e-6
       );
       assert.ok(finishedResult.rawSummary.downloadStallsRecovered >= 1);
       assert.ok(finishedResult.rawSummary.uploadStallsRecovered >= 1);

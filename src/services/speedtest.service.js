@@ -7,13 +7,18 @@
  */
 
 import { TEST_PROFILES } from '../config/speedtest.config.js';
-import { DEFAULT_RUNTIME_CONFIG, getRuntimeConfig } from './runtime-config.js';
+import {
+  DEFAULT_RUNTIME_CONFIG,
+  getRuntimeConfig,
+  resolveRuntimeRoute
+} from './runtime-config.js';
 import { analyzeLoadedLatencySpikes } from '../diagnostics/connection-diagnostics.js';
 import {
   checkBrowserCapabilities,
   clamp,
   isNonNegativeNumber,
   isPositiveNumber,
+  isValidNumber,
   METRIC_STATUS,
   resolveMetric,
   sanitizeBandwidthPoints,
@@ -25,6 +30,11 @@ import {
   computePercentile,
   computeStats
 } from '../utils/formatters.js';
+
+export const MIN_VALID_NETWORK_RTT_MS = 0.05;
+export const MAX_VALID_NETWORK_RTT_MS = 2000;
+export const MAX_HTTP1_SAFE_STREAMS = 4;
+export const DEFAULT_IDLE_PING_INTERVAL_MS = 60;
 
 export function parseServerTiming(header) {
   if (!header || typeof header !== 'string') {
@@ -39,6 +49,12 @@ export function parseServerTiming(header) {
     const reqDurMatch = header.match(/(?:^|,\s*)cfReq(?:uest)?Dur(?:ation)?;\s*dur=([0-9.]+)/i);
     if (reqDurMatch) {
       serverMs = Number(reqDurMatch[1]) || 0;
+    }
+  }
+  if (serverMs === 0) {
+    const appDurMatch = header.match(/(?:^|,\s*)app(?:;[^,]*)?;\s*dur=([0-9.]+)/i);
+    if (appDurMatch) {
+      serverMs = Number(appDurMatch[1]) || 0;
     }
   }
 
@@ -63,13 +79,21 @@ export function resolveNetworkRttMs({
   serverTimingHeader = '',
   isLoaded = false
 } = {}) {
-  const safeWallMs = isNonNegativeNumber(wallMs) ? wallMs : 1;
-  const baseTtfb =
-    isNonNegativeNumber(resourceTtfbMs) && resourceTtfbMs > 0 ? resourceTtfbMs : safeWallMs;
+  const hasWall = isNonNegativeNumber(wallMs) && wallMs > 0;
+  const safeWallMs = hasWall ? wallMs : 1;
+  const hasResourceTtfb = isNonNegativeNumber(resourceTtfbMs) && resourceTtfbMs > 0;
+  const baseTtfb = hasResourceTtfb ? resourceTtfbMs : safeWallMs;
 
   const { serverMs, tcpRttMs } = parseServerTiming(serverTimingHeader);
   const httpNet = baseTtfb - serverMs;
-  const validTcpRtt = isNonNegativeNumber(tcpRttMs) && tcpRttMs >= 0.5 && tcpRttMs <= 2000;
+  const validTcpRtt =
+    isNonNegativeNumber(tcpRttMs) &&
+    tcpRttMs >= MIN_VALID_NETWORK_RTT_MS &&
+    tcpRttMs <= MAX_VALID_NETWORK_RTT_MS;
+  const validHttpNet =
+    isNonNegativeNumber(httpNet) &&
+    httpNet >= MIN_VALID_NETWORK_RTT_MS &&
+    httpNet <= MAX_VALID_NETWORK_RTT_MS;
 
   // Protege o RTT contra picos artificiais de processamento no Worker da borda (cfSpeedWorker)
   if (serverMs > 100 && validTcpRtt) {
@@ -81,15 +105,111 @@ export function resolveNetworkRttMs({
     return tcpRttMs;
   }
 
-  if (isNonNegativeNumber(httpNet) && httpNet >= 0.5 && httpNet <= 2000) {
-    return httpNet;
+  if (validHttpNet) {
+    return Math.round(httpNet * 1000) / 1000;
   }
 
   if (validTcpRtt) {
     return tcpRttMs;
   }
 
-  return Math.max(1, safeWallMs);
+  return safeWallMs >= MIN_VALID_NETWORK_RTT_MS ? safeWallMs : 1;
+}
+
+export function isHttp1Protocol(protocol) {
+  if (typeof protocol !== 'string') return false;
+  const normalized = protocol.trim().toLowerCase();
+  return normalized === 'http/1.1' || normalized === 'http/1.0' || normalized === 'http/1';
+}
+
+/**
+ * Rastreador monotônico de bytes enviados no upload multi-stream.
+ * Soma sempre `confirmedBytes + inFlightBytes` e transfere atomicamente cada bloco
+ * concluído de `inFlight` para `confirmed`, evitando degraus, dupla contagem ou
+ * travamentos quando o primeiro bloco termina com outros ainda em voo.
+ */
+export function createUploadByteTracker() {
+  let confirmedBytes = 0;
+  let inFlightBytes = 0;
+  let recordedWatermark = 0;
+
+  const addInFlight = (deltaBytes) => {
+    if (!isValidNumber(deltaBytes) || deltaBytes === 0) return;
+    inFlightBytes = Math.max(0, inFlightBytes + deltaBytes);
+  };
+
+  const confirmChunk = (chunkBytes, trackedInFlightBytes = 0) => {
+    const safeChunk = isPositiveNumber(chunkBytes) ? chunkBytes : 0;
+    const safeTracked = isPositiveNumber(trackedInFlightBytes) ? trackedInFlightBytes : 0;
+    inFlightBytes = Math.max(0, inFlightBytes - safeTracked);
+    confirmedBytes += safeChunk;
+  };
+
+  const abortChunk = (trackedInFlightBytes = 0) => {
+    const safeTracked = isPositiveNumber(trackedInFlightBytes) ? trackedInFlightBytes : 0;
+    inFlightBytes = Math.max(0, inFlightBytes - safeTracked);
+  };
+
+  const getEffectiveBytes = () => {
+    const candidate = confirmedBytes + inFlightBytes;
+    recordedWatermark = Math.max(recordedWatermark, candidate);
+    return recordedWatermark;
+  };
+
+  return {
+    addInFlight,
+    confirmChunk,
+    abortChunk,
+    getEffectiveBytes,
+    getTotalActivityBytes: () => confirmedBytes + inFlightBytes,
+    getConfirmedBytes: () => confirmedBytes,
+    getInFlightBytes: () => inFlightBytes,
+    getWatermark: () => recordedWatermark
+  };
+}
+
+/**
+ * Consolida contadores de tentativas, sucessos, timeouts, falhas, perda percentual,
+ * máximo e P95 para uma fase de sondagem de latência.
+ *
+ * @param {{ attempts?: number, succeeded?: number, timeouts?: number, failures?: number } | null | undefined} counters
+ * @param {number[]} samplesMs
+ * @returns {import('../types.js').LatencyProbePhaseStats}
+ */
+export function summarizeLatencyProbePhase(counters, samplesMs = []) {
+  const validSamples = Array.isArray(samplesMs)
+    ? samplesMs.filter((v) => isNonNegativeNumber(v))
+    : [];
+  const succeeded = isNonNegativeNumber(counters?.succeeded)
+    ? counters.succeeded
+    : validSamples.length;
+  const timeouts = isNonNegativeNumber(counters?.timeouts) ? counters.timeouts : 0;
+  const rawAttempts = isNonNegativeNumber(counters?.attempts) ? counters.attempts : succeeded;
+  const rawFailures = isNonNegativeNumber(counters?.failures)
+    ? counters.failures
+    : Math.max(0, rawAttempts - succeeded);
+  const failures = Math.max(timeouts, rawFailures);
+  const attempts = Math.max(rawAttempts, succeeded + failures);
+  const lost = Math.max(0, attempts - succeeded);
+  const lossPct = attempts > 0 ? Math.round((lost / attempts) * 10_000) / 100 : 0;
+
+  let maxMs = null;
+  let p95Ms = null;
+  if (validSamples.length > 0) {
+    maxMs = Math.round(Math.max(...validSamples) * 1000) / 1000;
+    const rawP95 = computePercentile(validSamples, 0.95);
+    p95Ms = isNonNegativeNumber(rawP95) ? Math.round(rawP95 * 1000) / 1000 : maxMs;
+  }
+
+  return {
+    attempts,
+    succeeded,
+    timeouts,
+    failures,
+    lossPct,
+    maxMs,
+    p95Ms
+  };
 }
 
 export function computeRollingWindowMbps(ticks, nowRelMs, windowMs = 1000) {
@@ -150,16 +270,55 @@ export function selectSteadyStatePoints(points, rampDiscardMs = 1000, minSteadyC
   return valid;
 }
 
+/**
+ * Calcula o Jitter (média das diferenças absolutas consecutivas de RTT) com
+ * poda robusta leve contra um único outlier isolado (ex.: GC do navegador ou
+ * scan pontual de rádio Wi-Fi) quando `N >= 6`. Se houver 2 ou mais picos/oscilações,
+ * preserva todas as amostras integralmente.
+ *
+ * @param {number[]} latencies
+ * @returns {number | null}
+ */
 export function computeJitterMs(latencies) {
-  if (!Array.isArray(latencies) || latencies.length < 2) {
+  if (!Array.isArray(latencies)) {
+    return null;
+  }
+
+  const valid = latencies.filter((v) => isNonNegativeNumber(v));
+  if (valid.length < 2) {
+    return null;
+  }
+
+  let working = valid;
+  if (valid.length >= 6) {
+    const median = computePercentile(valid, 0.5);
+    if (isNonNegativeNumber(median)) {
+      const absDeviations = valid.map((v) => Math.abs(v - median));
+      const mad = computePercentile(absDeviations, 0.5) ?? 0;
+      const outlierCutoff = Math.max(25, mad * 4);
+      const outlierIndices = [];
+      for (let i = 0; i < valid.length; i += 1) {
+        if (Math.abs(valid[i] - median) > outlierCutoff) {
+          outlierIndices.push(i);
+        }
+      }
+      // Remove apenas quando houver exatamente 1 anomalia isolada na série inteira
+      if (outlierIndices.length === 1) {
+        const skipIdx = outlierIndices[0];
+        working = valid.filter((_, idx) => idx !== skipIdx);
+      }
+    }
+  }
+
+  if (working.length < 2) {
     return null;
   }
 
   let sumDeltas = 0;
-  for (let i = 1; i < latencies.length; i += 1) {
-    sumDeltas += Math.abs(latencies[i] - latencies[i - 1]);
+  for (let i = 1; i < working.length; i += 1) {
+    sumDeltas += Math.abs(working[i] - working[i - 1]);
   }
-  return sumDeltas / (latencies.length - 1);
+  return sumDeltas / (working.length - 1);
 }
 
 function createLinkedController(...parentSignals) {
@@ -226,27 +385,32 @@ function buildProbeUrl(baseUrl, params = {}) {
   return url.href;
 }
 
-function getResourceTtfbMs(url) {
+function getResourceTimingMeta(url) {
   if (typeof performance === 'undefined' || typeof performance.getEntriesByName !== 'function') {
-    return null;
+    return { ttfbMs: null, nextHopProtocol: null };
   }
   try {
     const entries = performance.getEntriesByName(url);
     const perf = /** @type {PerformanceResourceTiming | null} */ (
       entries && entries.length > 0 ? entries[entries.length - 1] : null
     );
-    if (
-      perf &&
+    if (!perf) {
+      return { ttfbMs: null, nextHopProtocol: null };
+    }
+    const ttfbMs =
       isNonNegativeNumber(perf.requestStart) &&
       isNonNegativeNumber(perf.responseStart) &&
       perf.responseStart > perf.requestStart
-    ) {
-      return perf.responseStart - perf.requestStart;
-    }
+        ? perf.responseStart - perf.requestStart
+        : null;
+    const nextHopProtocol =
+      typeof perf.nextHopProtocol === 'string' && perf.nextHopProtocol.trim()
+        ? perf.nextHopProtocol.trim()
+        : null;
+    return { ttfbMs, nextHopProtocol };
   } catch {
-    // noop
+    return { ttfbMs: null, nextHopProtocol: null };
   }
-  return null;
 }
 
 export const SAFE_MAX_DOWNLOAD_CHUNK_BYTES = 50_000_000;
@@ -308,6 +472,13 @@ export function createRunAccumulator(options = {}) {
     unloadedLatencies: [],
     downloadLoadedLatencies: [],
     uploadLoadedLatencies: [],
+    latencyProbeCounters: {
+      idle: { attempts: 0, succeeded: 0, timeouts: 0, failures: 0 },
+      download: { attempts: 0, succeeded: 0, timeouts: 0, failures: 0 },
+      upload: { attempts: 0, succeeded: 0, timeouts: 0, failures: 0 }
+    },
+    detectedProtocol: /** @type {string | null} */ (null),
+    http1ConcurrencyCapped: false,
     totalDownloadBytes: 0,
     totalUploadBytes: 0,
     downloadStallsRecovered: 0,
@@ -331,6 +502,17 @@ export function createRunAccumulator(options = {}) {
     return computePercentile(bpsList, perc) ?? undefined;
   };
   const calcBwPrimary = (pts) => calcBwPercentile(pts, bandwidthPerc);
+  const buildLatencyProbes = () => ({
+    idle: summarizeLatencyProbePhase(state.latencyProbeCounters.idle, state.unloadedLatencies),
+    download: summarizeLatencyProbePhase(
+      state.latencyProbeCounters.download,
+      state.downloadLoadedLatencies
+    ),
+    upload: summarizeLatencyProbePhase(
+      state.latencyProbeCounters.upload,
+      state.uploadLoadedLatencies
+    )
+  });
 
   return {
     state,
@@ -338,9 +520,12 @@ export function createRunAccumulator(options = {}) {
       measurementMode === 'commercial' ? getAllValidDownload() : getSteadyDownload(),
     getUploadBandwidthPoints: () =>
       measurementMode === 'commercial' ? getAllValidUpload() : getSteadyUpload(),
+    getSteadyDownloadPoints: () => getSteadyDownload(),
+    getSteadyUploadPoints: () => getSteadyUpload(),
     getUnloadedLatencyPoints: () => state.unloadedLatencies.slice(),
     getDownLoadedLatencyPoints: () => state.downloadLoadedLatencies.slice(),
     getUpLoadedLatencyPoints: () => state.uploadLoadedLatencies.slice(),
+    getLatencyProbeStats: () => buildLatencyProbes(),
     getDownloadBandwidth: () => calcBwPrimary(getSteadyDownload()),
     getUploadBandwidth: () => calcBwPrimary(getSteadyUpload()),
     getSustainedDownloadBandwidth: () => calcBwPercentile(getSteadyDownload(), 0.5),
@@ -365,6 +550,8 @@ export function createRunAccumulator(options = {}) {
     getSummary: () => ({
       engine: 'testai-multistream',
       measurementMode,
+      detectedProtocol: state.detectedProtocol,
+      http1ConcurrencyCapped: state.http1ConcurrencyCapped,
       latency: calcLat(state.unloadedLatencies),
       download: calcBwPrimary(getSteadyDownload()),
       upload: calcBwPrimary(getSteadyUpload()),
@@ -372,6 +559,7 @@ export function createRunAccumulator(options = {}) {
       sustainedUpload: calcBwPercentile(getSteadyUpload(), 0.5),
       downLoadedLatency: calcLat(state.downloadLoadedLatencies),
       upLoadedLatency: calcLat(state.uploadLoadedLatencies),
+      latencyProbes: buildLatencyProbes(),
       downloadStallsRecovered: state.downloadStallsRecovered,
       uploadStallsRecovered: state.uploadStallsRecovered,
       rateLimitDownshifts: state.rateLimitDownshifts
@@ -447,6 +635,7 @@ export class SpeedTestService {
     const baseProfile = TEST_PROFILES[profileId] || TEST_PROFILES.standard;
     const cfg = this.runtimeConfig || getRuntimeConfig();
     const measurementMode = cfg.measurementMode === 'commercial' ? 'commercial' : 'sustained';
+    const routeType = resolveRuntimeRoute(cfg);
     const baseOpts = baseProfile.options;
     const isCommercial = measurementMode === 'commercial';
     const profile = {
@@ -454,6 +643,7 @@ export class SpeedTestService {
       options: {
         ...baseOpts,
         measurementMode,
+        routeType,
         downloadConcurrency: isCommercial
           ? clampParallelStreams(cfg.parallelStreams?.download, baseOpts.downloadConcurrency)
           : baseOpts.downloadConcurrency,
@@ -628,10 +818,19 @@ export class SpeedTestService {
     }
   }
 
-  async _probeLatencyOnce({ urlBase, during, pingTimeoutMs, signal, isLoaded }) {
+  async _probeLatencyOnce({ urlBase, during, pingTimeoutMs, signal, isLoaded, onOutcome }) {
+    if (signal?.aborted) {
+      onOutcome?.({ status: 'aborted', nextHopProtocol: null });
+      return null;
+    }
+
     const url = buildProbeUrl(urlBase, { bytes: 0, during });
     const linked = createLinkedController(signal);
-    const reqTimer = globalThis.setTimeout(() => linked.controller.abort('ping-timeout'), pingTimeoutMs);
+    let timedOut = false;
+    const reqTimer = globalThis.setTimeout(() => {
+      timedOut = true;
+      linked.controller.abort('ping-timeout');
+    }, pingTimeoutMs);
     const start = performance.now();
 
     try {
@@ -641,23 +840,85 @@ export class SpeedTestService {
       });
       const wallMs = performance.now() - start;
       await res?.text?.().catch(() => {});
-      if (!res?.ok || signal?.aborted) {
+      if (signal?.aborted) {
+        onOutcome?.({ status: 'aborted', nextHopProtocol: null });
+        return null;
+      }
+      if (!res?.ok) {
+        onOutcome?.({ status: 'failed', nextHopProtocol: null });
         return null;
       }
 
       const serverTimingHeader = res.headers?.get?.('server-timing') || '';
-      const resourceTtfbMs = getResourceTtfbMs(url);
-      return resolveNetworkRttMs({
+      const rawRouteHeader = (res.headers?.get?.('x-testai-route') || '').trim().toLowerCase();
+      const headerRoute = rawRouteHeader === 'on-net' ? 'on-net' : null;
+      const resourceMeta = getResourceTimingMeta(url);
+      const rttMs = resolveNetworkRttMs({
         wallMs,
-        resourceTtfbMs,
+        resourceTtfbMs: resourceMeta.ttfbMs,
         serverTimingHeader,
         isLoaded
       });
+      onOutcome?.({
+        status: 'ok',
+        nextHopProtocol: resourceMeta.nextHopProtocol,
+        headerRoute
+      });
+      return rttMs;
     } catch {
+      if (signal?.aborted) {
+        onOutcome?.({ status: 'aborted', nextHopProtocol: null });
+      } else if (timedOut) {
+        onOutcome?.({ status: 'timeout', nextHopProtocol: null });
+      } else {
+        onOutcome?.({ status: 'failed', nextHopProtocol: null });
+      }
       return null;
     } finally {
       clearTimeout(reqTimer);
       linked.cleanup();
+    }
+  }
+
+  _applyDetectedProtocolGuard(profile, accumulator, nextHopProtocol) {
+    if (!nextHopProtocol || !accumulator?.state) return;
+    if (!accumulator.state.detectedProtocol) {
+      accumulator.state.detectedProtocol = nextHopProtocol;
+    }
+    if (isHttp1Protocol(nextHopProtocol)) {
+      const dlCap = Math.min(
+        profile.options.downloadConcurrency || MAX_HTTP1_SAFE_STREAMS,
+        MAX_HTTP1_SAFE_STREAMS
+      );
+      const ulCap = Math.min(
+        profile.options.uploadConcurrency || MAX_HTTP1_SAFE_STREAMS,
+        MAX_HTTP1_SAFE_STREAMS
+      );
+      if (
+        dlCap < (profile.options.downloadConcurrency || 0) ||
+        ulCap < (profile.options.uploadConcurrency || 0)
+      ) {
+        accumulator.state.http1ConcurrencyCapped = true;
+      }
+      profile.options.downloadConcurrency = dlCap;
+      profile.options.uploadConcurrency = ulCap;
+    }
+  }
+
+  _recordProbeOutcome(counters, rttMs, reportedOutcome, signal) {
+    if (!counters) return;
+    if (reportedOutcome === 'aborted' || (rttMs === null && signal?.aborted)) {
+      return;
+    }
+    counters.attempts += 1;
+    if (rttMs !== null) {
+      counters.succeeded += 1;
+      return;
+    }
+    counters.failures += 1;
+    // Se _probeLatencyOnce foi sobrescrito em mock retornando null sem relatar status, contabiliza como timeout/falha
+    if (reportedOutcome === 'timeout' || reportedOutcome === null) {
+      counters.timeouts += 1;
     }
   }
 
@@ -666,20 +927,41 @@ export class SpeedTestService {
     const totalNeeded = opts.idlePingCount || 10;
     const maxBudgetMs = opts.maxIdleLatencyMs || 2000;
     const pingTimeoutMs = opts.pingTimeoutMs || 1200;
+    const baseIntervalMs = isNonNegativeNumber(opts.idlePingIntervalMs)
+      ? opts.idlePingIntervalMs
+      : DEFAULT_IDLE_PING_INTERVAL_MS;
+    const budgetCapIntervalMs = Math.floor(maxBudgetMs / Math.max(2, totalNeeded * 2));
+    const interProbeDelayMs = Math.max(0, Math.min(baseIntervalMs, budgetCapIntervalMs));
     const phaseStart = performance.now();
     const hardLimitMs = maxBudgetMs * 1.5;
 
-    // 1 sonda de aquecimento TLS/rota (descartada)
+    // 1 sonda de aquecimento TLS/rota (descartada das estatísticas, mas detecta nextHopProtocol e X-TestAi-Route)
+    let warmupProtocol = null;
     await this._probeLatencyOnce({
       urlBase: opts.pingApiUrl || opts.downloadApiUrl,
       during: 'warmup',
       pingTimeoutMs,
       signal,
-      isLoaded: false
+      isLoaded: false,
+      onOutcome: (meta) => {
+        warmupProtocol = meta?.nextHopProtocol || null;
+        if (meta?.headerRoute === 'on-net') {
+          profile.options.routeType = 'on-net';
+        }
+      }
     });
+    this._applyDetectedProtocolGuard(profile, accumulator, warmupProtocol);
 
     for (let i = 0; i < totalNeeded + 2; i += 1) {
       if (!this._isActiveRun(runId, signal)) return;
+
+      if (i > 0 && interProbeDelayMs > 0) {
+        const remainingBudget = maxBudgetMs - (performance.now() - phaseStart);
+        if (remainingBudget > interProbeDelayMs) {
+          await delayWithSignal(interProbeDelayMs, signal);
+        }
+        if (!this._isActiveRun(runId, signal)) return;
+      }
 
       const elapsed = performance.now() - phaseStart;
       const gotEnough = accumulator.state.unloadedLatencies.length >= totalNeeded;
@@ -689,13 +971,34 @@ export class SpeedTestService {
         break;
       }
 
+      /** @type {'ok' | 'timeout' | 'failed' | 'aborted' | null} */
+      let probeOutcome = null;
+      let probeProtocol = null;
       const rttMs = await this._probeLatencyOnce({
         urlBase: opts.pingApiUrl || opts.downloadApiUrl,
         during: 'idle',
         pingTimeoutMs,
         signal,
-        isLoaded: false
+        isLoaded: false,
+        onOutcome: (meta) => {
+          probeOutcome = meta?.status || null;
+          probeProtocol = meta?.nextHopProtocol || null;
+          if (meta?.headerRoute === 'on-net') {
+            profile.options.routeType = 'on-net';
+          }
+        }
       });
+
+      if (!accumulator.state.detectedProtocol && probeProtocol) {
+        this._applyDetectedProtocolGuard(profile, accumulator, probeProtocol);
+      }
+
+      this._recordProbeOutcome(
+        accumulator.state.latencyProbeCounters.idle,
+        rttMs,
+        probeOutcome,
+        signal
+      );
 
       if (rttMs !== null) {
         this.lastActivityAt = performance.now();
@@ -713,19 +1016,26 @@ export class SpeedTestService {
     pingTimeoutMs,
     stopAt,
     signal,
+    counters,
     onSample
   }) {
     while (!signal?.aborted && performance.now() < stopAt) {
       await delayWithSignal(throttleMs, signal);
       if (signal?.aborted || performance.now() >= stopAt) break;
 
+      /** @type {'ok' | 'timeout' | 'failed' | 'aborted' | null} */
+      let probeOutcome = null;
       const rttMs = await this._probeLatencyOnce({
         urlBase,
         during,
         pingTimeoutMs,
         signal,
-        isLoaded: true
+        isLoaded: true,
+        onOutcome: (meta) => {
+          probeOutcome = meta?.status || null;
+        }
       });
+      this._recordProbeOutcome(counters, rttMs, probeOutcome, signal);
       if (rttMs !== null && !signal?.aborted) {
         onSample(rttMs);
       }
@@ -902,6 +1212,7 @@ export class SpeedTestService {
           pingTimeoutMs: Math.max(opts.pingTimeoutMs || 1200, 1800),
           stopAt,
           signal: phaseSignal,
+          counters: accumulator.state.latencyProbeCounters.download,
           onSample: (rttMs) => accumulator.state.downloadLoadedLatencies.push(rttMs)
         })
       );
@@ -935,10 +1246,12 @@ export class SpeedTestService {
     stopAt,
     phaseSignal,
     activeXhrs,
-    onInFlightChange
+    onInFlightChange,
+    onChunkSettled
   }) {
     return new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
+      const chunkByteLength = payload?.byteLength || 0;
       activeXhrs.add(xhr);
       let settled = false;
       let lastLoaded = 0;
@@ -952,8 +1265,12 @@ export class SpeedTestService {
         clearInterval(wdTimer);
         phaseSignal.removeEventListener('abort', onAbort);
         activeXhrs.delete(xhr);
-        if (lastLoaded > 0) {
-          onInFlightChange(-lastLoaded);
+        const trackedBytes = lastLoaded;
+        lastLoaded = 0;
+        if (typeof onChunkSettled === 'function') {
+          onChunkSettled(Boolean(outcome?.ok), chunkByteLength, trackedBytes);
+        } else if (trackedBytes > 0) {
+          onInFlightChange?.(-trackedBytes);
         }
         resolve(outcome);
       };
@@ -1001,11 +1318,13 @@ export class SpeedTestService {
 
       xhr.upload.onprogress = (evt) => {
         lastProgressAt = performance.now();
-        const loaded = Number(evt?.loaded) || 0;
+        const rawLoaded = Number(evt?.loaded) || 0;
+        const loaded =
+          chunkByteLength > 0 ? clamp(rawLoaded, 0, chunkByteLength) : Math.max(0, rawLoaded);
         const delta = Math.max(0, loaded - lastLoaded);
         if (delta > 0) {
           lastLoaded = loaded;
-          onInFlightChange(delta);
+          onInFlightChange?.(delta);
         }
       };
 
@@ -1098,25 +1417,16 @@ export class SpeedTestService {
     const phaseStart = performance.now();
     const stopAt = phaseStart + opts.uploadDurationMs;
     const ticks = [{ t: 0, bytes: 0 }];
+    const byteTracker = createUploadByteTracker();
     let currentChunkBytes = opts.initialUploadBytes || 524_288;
-    let confirmedBytes = 0;
-    let inFlightBytes = 0;
-    let recordedWatermark = 0;
     let lastActivityMarker = 0;
 
     this._emitProgressSnapshot(runId, 'upload', 56, accumulator, context, sessionSignal);
 
-    const getEffectiveBytes = (relMs) => {
-      const candidate =
-        confirmedBytes > 0 ? confirmedBytes : relMs >= 1200 ? inFlightBytes : 0;
-      recordedWatermark = Math.max(recordedWatermark, candidate);
-      return recordedWatermark;
-    };
-
     const adaptUploadChunkSize = (mbps, relMs) => {
       if (accumulator.state.rateLimitDownshifts > 0) return;
       const maxCap = opts.maxUploadBytes || 4_000_000;
-      if (confirmedBytes === 0 && relMs >= 1200) {
+      if (byteTracker.getConfirmedBytes() === 0 && relMs >= 1200) {
         currentChunkBytes = 131_072;
         return;
       }
@@ -1135,10 +1445,10 @@ export class SpeedTestService {
       if (!this._isActiveRun(runId, phaseSignal)) return;
       const now = performance.now();
       const relMs = now - phaseStart;
-      const effectiveBytes = getEffectiveBytes(relMs);
+      const effectiveBytes = byteTracker.getEffectiveBytes();
       ticks.push({ t: relMs, bytes: effectiveBytes });
 
-      const activityNow = confirmedBytes + inFlightBytes;
+      const activityNow = byteTracker.getTotalActivityBytes();
       if (activityNow > lastActivityMarker) {
         this.lastActivityAt = now;
         lastActivityMarker = activityNow;
@@ -1153,7 +1463,7 @@ export class SpeedTestService {
         });
         adaptUploadChunkSize(sample.mbps, relMs);
       } else if (
-        confirmedBytes === 0 &&
+        byteTracker.getConfirmedBytes() === 0 &&
         relMs >= 1200 &&
         accumulator.state.rateLimitDownshifts === 0
       ) {
@@ -1176,7 +1486,7 @@ export class SpeedTestService {
         const staggerStart = performance.now();
         while (
           !phaseSignal.aborted &&
-          confirmedBytes === 0 &&
+          byteTracker.getConfirmedBytes() === 0 &&
           performance.now() - staggerStart < 450 &&
           performance.now() < stopAt
         ) {
@@ -1201,9 +1511,16 @@ export class SpeedTestService {
               phaseSignal,
               activeXhrs,
               onInFlightChange: (delta) => {
-                inFlightBytes = Math.max(0, inFlightBytes + delta);
+                byteTracker.addInFlight(delta);
                 if (delta > 0) {
                   this.lastActivityAt = performance.now();
+                }
+              },
+              onChunkSettled: (isOk, totalChunkBytes, trackedInFlightBytes) => {
+                if (isOk) {
+                  byteTracker.confirmChunk(totalChunkBytes, trackedInFlightBytes);
+                } else {
+                  byteTracker.abortChunk(trackedInFlightBytes);
                 }
               }
             })
@@ -1216,7 +1533,9 @@ export class SpeedTestService {
             });
 
         if (result.ok) {
-          confirmedBytes += chunkSize;
+          if (!useXhr) {
+            byteTracker.confirmChunk(chunkSize, 0);
+          }
           accumulator.state.totalUploadBytes += chunkSize;
           this.lastActivityAt = performance.now();
         } else if (result.rateLimited) {
@@ -1244,6 +1563,7 @@ export class SpeedTestService {
           pingTimeoutMs: Math.max(opts.pingTimeoutMs || 1200, 1800),
           stopAt,
           signal: phaseSignal,
+          counters: accumulator.state.latencyProbeCounters.upload,
           onSample: (rttMs) => accumulator.state.uploadLoadedLatencies.push(rttMs)
         })
       );
@@ -1265,7 +1585,7 @@ export class SpeedTestService {
     }
 
     const endRelMs = Math.max(150, performance.now() - phaseStart);
-    const finalEffectiveBytes = getEffectiveBytes(endRelMs);
+    const finalEffectiveBytes = byteTracker.getEffectiveBytes();
     ticks.push({ t: endRelMs, bytes: finalEffectiveBytes });
     const finalSample = computeRollingWindowMbps(ticks, endRelMs, opts.rollingWindowMs || 1000);
     if (finalSample && finalEffectiveBytes > lastActivityMarker) {
@@ -1475,6 +1795,50 @@ export class SpeedTestService {
     const dlLatPoints = snapshot.series.downloadLatencyPoints;
     const ulLatPoints = snapshot.series.uploadLatencyPoints;
 
+    const rampDiscardMs = isNonNegativeNumber(profile?.options?.rampDiscardMs)
+      ? profile.options.rampDiscardMs
+      : 1000;
+
+    let steadyDlPoints = [];
+    let steadyUlPoints = [];
+    try {
+      steadyDlPoints =
+        typeof results.getSteadyDownloadPoints === 'function'
+          ? sanitizeBandwidthPoints(results.getSteadyDownloadPoints())
+          : selectSteadyStatePoints(dlPoints, rampDiscardMs, 4);
+    } catch {
+      steadyDlPoints = selectSteadyStatePoints(dlPoints, rampDiscardMs, 4);
+    }
+
+    try {
+      steadyUlPoints =
+        typeof results.getSteadyUploadPoints === 'function'
+          ? sanitizeBandwidthPoints(results.getSteadyUploadPoints())
+          : selectSteadyStatePoints(ulPoints, rampDiscardMs, 4);
+    } catch {
+      steadyUlPoints = selectSteadyStatePoints(ulPoints, rampDiscardMs, 4);
+    }
+
+    const idleLatValues = idleLatPoints.map((p) => p.ms);
+    const dlLatValues = dlLatPoints.map((p) => p.ms);
+    const ulLatValues = ulLatPoints.map((p) => p.ms);
+
+    let latencyProbes = null;
+    try {
+      if (typeof results.getLatencyProbeStats === 'function') {
+        latencyProbes = results.getLatencyProbeStats();
+      }
+    } catch {
+      latencyProbes = null;
+    }
+    if (!latencyProbes) {
+      latencyProbes = {
+        idle: summarizeLatencyProbePhase(null, idleLatValues),
+        download: summarizeLatencyProbePhase(null, dlLatValues),
+        upload: summarizeLatencyProbePhase(null, ulLatValues)
+      };
+    }
+
     const downloadLatencyDelta = calculateLatencyDelta(
       snapshot.metrics.ping.value,
       snapshot.metrics.downloadLatency.value
@@ -1496,6 +1860,8 @@ export class SpeedTestService {
 
     const measurementMode =
       profile?.options?.measurementMode === 'commercial' ? 'commercial' : 'sustained';
+    const routeType =
+      profile?.options?.routeType === 'on-net' ? 'on-net' : 'off-net-fallback';
 
     const consolidatedMetrics = {
       ...snapshot.metrics,
@@ -1513,6 +1879,7 @@ export class SpeedTestService {
       incomplete,
       durationMs,
       measurementMode,
+      routeType,
       parallelStreams: {
         download: profile?.options?.downloadConcurrency ?? 4,
         upload: profile?.options?.uploadConcurrency ?? 4
@@ -1531,11 +1898,11 @@ export class SpeedTestService {
       },
       metrics: consolidatedMetrics,
       stats: {
-        download: computeStats(dlPoints.map((p) => p.mbps)),
-        upload: computeStats(ulPoints.map((p) => p.mbps)),
-        unloadedLatency: computeStats(idleLatPoints.map((p) => p.ms)),
-        downloadLatency: computeStats(dlLatPoints.map((p) => p.ms)),
-        uploadLatency: computeStats(ulLatPoints.map((p) => p.ms))
+        download: computeStats(steadyDlPoints.map((p) => p.mbps)),
+        upload: computeStats(steadyUlPoints.map((p) => p.mbps)),
+        unloadedLatency: computeStats(idleLatValues),
+        downloadLatency: computeStats(dlLatValues),
+        uploadLatency: computeStats(ulLatValues)
       },
       transfer: {
         totalDownloadBytes,
@@ -1544,6 +1911,7 @@ export class SpeedTestService {
       },
       series: snapshot.series,
       loadedSpikes,
+      latencyProbes,
       rawSummary: summary
     };
   }

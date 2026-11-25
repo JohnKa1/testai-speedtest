@@ -110,6 +110,37 @@ export function formatDeltaMs(deltaMs) {
 }
 
 /**
+ * Calcula o delta inteiro coerente com o Ping e a Latência sob carga arredondados em tela
+ * (`Math.round(loadedMs) - Math.round(idleMs)`), evitando contradições visuais de 1 ms
+ * como `12 ms -> 15 ms (+4 ms)`.
+ *
+ * @param {number | null | undefined} idleMs
+ * @param {number | null | undefined} loadedMs
+ * @param {number | null | undefined} [fallbackDeltaMs]
+ * @returns {number | null}
+ */
+export function computeCoherentLatencyDeltaMs(idleMs, loadedMs, fallbackDeltaMs = null) {
+  if (isNonNegativeNumber(idleMs) && isNonNegativeNumber(loadedMs)) {
+    return Math.max(0, Math.round(loadedMs) - Math.round(idleMs));
+  }
+  if (isNonNegativeNumber(fallbackDeltaMs)) {
+    return Math.round(fallbackDeltaMs);
+  }
+  return null;
+}
+
+/**
+ * @param {number | null | undefined} idleMs
+ * @param {number | null | undefined} loadedMs
+ * @param {number | null | undefined} [fallbackDeltaMs]
+ * @returns {string}
+ */
+export function formatCoherentDeltaMs(idleMs, loadedMs, fallbackDeltaMs = null) {
+  const coherent = computeCoherentLatencyDeltaMs(idleMs, loadedMs, fallbackDeltaMs);
+  return formatDeltaMs(coherent);
+}
+
+/**
  * Formata volume de dados transferidos (KB, MB, GB).
  */
 export function formatBytes(bytes) {
@@ -302,6 +333,9 @@ export function resolvePrimaryAndPeakSpeed(points, metric, statsObj = null, opti
       : null;
 
   if (options?.measurementMode === 'commercial') {
+    const commercialPeak = isNonNegativeNumber(statsObj?.max)
+      ? statsObj.max
+      : peak;
     const p90FromSeries = computeP90Mbps(points);
     const p90 =
       metric?.status === METRIC_STATUS.MEASURED && isNonNegativeNumber(metric?.value)
@@ -313,10 +347,10 @@ export function resolvePrimaryAndPeakSpeed(points, metric, statsObj = null, opti
             : null;
 
     const p50FromSeries = computeP50Mbps(points);
-    const sustained = isNonNegativeNumber(p50FromSeries)
-      ? p50FromSeries
-      : isNonNegativeNumber(statsObj?.p50)
-        ? statsObj.p50
+    const sustained = isNonNegativeNumber(statsObj?.p50)
+      ? statsObj.p50
+      : isNonNegativeNumber(p50FromSeries)
+        ? p50FromSeries
         : isNonNegativeNumber(statsObj?.mean)
           ? statsObj.mean
           : null;
@@ -325,7 +359,7 @@ export function resolvePrimaryAndPeakSpeed(points, metric, statsObj = null, opti
       return {
         primary: p90,
         sustained,
-        peak,
+        peak: commercialPeak,
         status: isNonNegativeNumber(p90) ? METRIC_STATUS.MEASURED : METRIC_STATUS.UNAVAILABLE
       };
     }
@@ -333,7 +367,7 @@ export function resolvePrimaryAndPeakSpeed(points, metric, statsObj = null, opti
     return {
       primary: null,
       sustained,
-      peak,
+      peak: commercialPeak,
       status: metric?.status || METRIC_STATUS.UNAVAILABLE
     };
   }

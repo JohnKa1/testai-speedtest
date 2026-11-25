@@ -11,8 +11,11 @@ import './helpers.js';
 import {
   DEFAULT_RUNTIME_CONFIG,
   getRuntimeConfig,
+  getRuntimeState,
   loadRuntimeConfig,
   mergeRuntimeConfig,
+  resolveRuntimeRoute,
+  RUNTIME_ROUTES,
   setRuntimeConfig
 } from '../src/services/runtime-config.js';
 import { TEST_PROFILES } from '../src/config/speedtest.config.js';
@@ -104,7 +107,9 @@ describe('TestAi — Configuração White-Label em Tempo de Execução (Etapa 1)
     assert.deepEqual(malformedJsonConfig, DEFAULT_RUNTIME_CONFIG);
   });
 
-  it('faz fallback de campos ausentes/inválidos preservando os endpoints padrão da Cloudflare', () => {
+  it('faz fallback de campos ausentes/inválidos alinhando DEFAULT_RUNTIME_CONFIG em commercial e expondo rota ativa', () => {
+    assert.equal(DEFAULT_RUNTIME_CONFIG.measurementMode, 'commercial');
+
     const partial = mergeRuntimeConfig({
       ispName: '   Meu Provedor   ',
       measurementMode: 'modo-desconhecido',
@@ -114,13 +119,62 @@ describe('TestAi — Configuração White-Label em Tempo de Execução (Etapa 1)
 
     assert.equal(partial.ispName, 'Meu Provedor');
     assert.equal(partial.serverLabel, DEFAULT_RUNTIME_CONFIG.serverLabel);
-    assert.equal(partial.measurementMode, 'sustained');
+    assert.equal(partial.measurementMode, 'commercial');
     assert.equal(partial.parallelStreams.download, DEFAULT_RUNTIME_CONFIG.parallelStreams.download);
     assert.equal(partial.parallelStreams.upload, DEFAULT_RUNTIME_CONFIG.parallelStreams.upload);
     assert.equal(partial.endpoints.down, 'https://isp.local/down');
     assert.equal(partial.endpoints.up, DEFAULT_RUNTIME_CONFIG.endpoints.up);
     assert.equal(partial.endpoints.ping, DEFAULT_RUNTIME_CONFIG.endpoints.ping);
     assert.equal(partial.endpoints.meta, null);
+    assert.equal(resolveRuntimeRoute(partial), RUNTIME_ROUTES.ON_NET);
+    assert.equal(resolveRuntimeRoute(DEFAULT_RUNTIME_CONFIG), RUNTIME_ROUTES.OFF_NET_FALLBACK);
+  });
+
+  it('loadRuntimeConfig aplica timeout curto sem travar o boot e expõe on-net vs off-net-fallback em getRuntimeState', async () => {
+    const prevConfig = getRuntimeConfig();
+    try {
+      const timedOutConfig = await loadRuntimeConfig({
+        timeoutMs: 45,
+        fetchImpl: (_url, init) =>
+          new Promise((_, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new Error('Aborted')), {
+              once: true
+            });
+          })
+      });
+      assert.deepEqual(timedOutConfig, DEFAULT_RUNTIME_CONFIG);
+      const fallbackState = getRuntimeState();
+      assert.equal(fallbackState.ready, true);
+      assert.equal(fallbackState.usedFallback, true);
+      assert.equal(fallbackState.activeRoute, RUNTIME_ROUTES.OFF_NET_FALLBACK);
+
+      const onNetConfig = await loadRuntimeConfig({
+        timeoutMs: 200,
+        fetchImpl: async () =>
+          /** @type {any} */ ({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              ispName: 'Fibra Pop',
+              serverLabel: 'POP-01',
+              measurementMode: 'commercial',
+              endpoints: {
+                down: '/api/down',
+                up: '/api/up',
+                ping: '/api/ping',
+                meta: '/api/meta'
+              }
+            })
+          })
+      });
+      assert.equal(onNetConfig.ispName, 'Fibra Pop');
+      const onNetState = getRuntimeState();
+      assert.equal(onNetState.ready, true);
+      assert.equal(onNetState.usedFallback, false);
+      assert.equal(onNetState.activeRoute, RUNTIME_ROUTES.ON_NET);
+    } finally {
+      setRuntimeConfig(prevConfig);
+    }
   });
 
   it('SpeedTestService utiliza os endpoints de runtimeConfig sem usar speed.cloudflare.com quando customizado', async () => {

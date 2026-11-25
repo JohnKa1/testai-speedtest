@@ -4,10 +4,17 @@
  * o arquivo não existir, retornar erro HTTP ou vier malformado.
  */
 
+export const RUNTIME_ROUTES = Object.freeze({
+  ON_NET: 'on-net',
+  OFF_NET_FALLBACK: 'off-net-fallback'
+});
+
+export const DEFAULT_CONFIG_TIMEOUT_MS = 2500;
+
 export const DEFAULT_RUNTIME_CONFIG = Object.freeze({
   ispName: 'TestAi',
   serverLabel: 'Cloudflare Edge',
-  measurementMode: 'sustained',
+  measurementMode: 'commercial',
   parallelStreams: Object.freeze({
     download: 6,
     upload: 4
@@ -77,42 +84,148 @@ export function mergeRuntimeConfig(raw) {
   };
 }
 
+function isCloudflareEndpoint(endpoint) {
+  if (typeof endpoint !== 'string' || !endpoint.trim()) return true;
+  return /speed\.cloudflare\.com/i.test(endpoint.trim());
+}
+
+/**
+ * Determina se a configuração aponta para infraestrutura própria On-Net do provedor
+ * ou para o fallback externo Off-Net (Cloudflare Edge).
+ *
+ * @param {any} config
+ * @param {{ usedFallback?: boolean }} [options]
+ * @returns {'on-net' | 'off-net-fallback'}
+ */
+export function resolveRuntimeRoute(config, { usedFallback = false } = {}) {
+  if (usedFallback) {
+    return RUNTIME_ROUTES.OFF_NET_FALLBACK;
+  }
+  const endpoints = config?.endpoints;
+  if (!endpoints || typeof endpoints !== 'object') {
+    return RUNTIME_ROUTES.OFF_NET_FALLBACK;
+  }
+
+  const candidates = [endpoints.down, endpoints.up, endpoints.ping].filter(
+    (url) => typeof url === 'string' && url.trim().length > 0
+  );
+  if (candidates.length === 0) {
+    return RUNTIME_ROUTES.OFF_NET_FALLBACK;
+  }
+
+  const hasOnNetEndpoint = candidates.some((url) => !isCloudflareEndpoint(url));
+  return hasOnNetEndpoint ? RUNTIME_ROUTES.ON_NET : RUNTIME_ROUTES.OFF_NET_FALLBACK;
+}
+
 let activeRuntimeConfig = mergeRuntimeConfig(null);
+/**
+ * @type {{
+ *   ready: boolean,
+ *   loading: boolean,
+ *   activeRoute: 'on-net' | 'off-net-fallback',
+ *   usedFallback: boolean,
+ *   config: ReturnType<typeof mergeRuntimeConfig>
+ * }}
+ */
+let activeRuntimeState = {
+  ready: false,
+  loading: false,
+  activeRoute: RUNTIME_ROUTES.OFF_NET_FALLBACK,
+  usedFallback: true,
+  config: activeRuntimeConfig
+};
 
 export function getRuntimeConfig() {
   return activeRuntimeConfig;
 }
 
+export function getRuntimeState() {
+  return {
+    ...activeRuntimeState,
+    config: activeRuntimeConfig
+  };
+}
+
 /**
  * @param {any} config
+ * @param {{ usedFallback?: boolean }} [options]
  */
-export function setRuntimeConfig(config) {
+export function setRuntimeConfig(config, { usedFallback = false } = {}) {
+  const isNullFallback = config === null || config === undefined;
+  const fallbackFlag = Boolean(usedFallback || isNullFallback);
   activeRuntimeConfig = mergeRuntimeConfig(config);
+  activeRuntimeState = {
+    ready: true,
+    loading: false,
+    activeRoute: resolveRuntimeRoute(activeRuntimeConfig, { usedFallback: fallbackFlag }),
+    usedFallback: fallbackFlag,
+    config: activeRuntimeConfig
+  };
   return activeRuntimeConfig;
 }
 
 /**
- * Carrega `./config.json` em tempo de execução (`cache: 'no-store'`), validando e
- * aplicando fallback seguro para `DEFAULT_RUNTIME_CONFIG` em qualquer falha.
+ * Carrega `./config.json` em tempo de execução (`cache: 'no-store'`) com timeout curto,
+ * validando e aplicando fallback seguro para `DEFAULT_RUNTIME_CONFIG` em qualquer falha.
  *
- * @param {{ url?: string, fetchImpl?: typeof globalThis.fetch }} [options]
+ * @param {{ url?: string, fetchImpl?: typeof globalThis.fetch, timeoutMs?: number }} [options]
  */
 export async function loadRuntimeConfig({
   url = './config.json',
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_CONFIG_TIMEOUT_MS
 } = {}) {
   if (typeof fetchImpl !== 'function') {
-    return mergeRuntimeConfig(null);
+    return setRuntimeConfig(null, { usedFallback: true });
   }
 
+  const safeTimeoutMs =
+    Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0
+      ? Math.floor(Number(timeoutMs))
+      : DEFAULT_CONFIG_TIMEOUT_MS;
+
+  activeRuntimeState = {
+    ...activeRuntimeState,
+    loading: true
+  };
+
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      try {
+        controller?.abort('config-timeout');
+      } catch {
+        // noop
+      }
+      reject(new Error('RUNTIME_CONFIG_TIMEOUT'));
+    }, safeTimeoutMs);
+  });
+
   try {
-    const res = await fetchImpl(url, { cache: 'no-store' });
-    if (!res || !res.ok) {
-      return mergeRuntimeConfig(null);
-    }
-    const json = await res.json();
-    return mergeRuntimeConfig(json);
+    const fetchOpts = controller
+      ? { cache: /** @type {RequestCache} */ ('no-store'), signal: controller.signal }
+      : { cache: /** @type {RequestCache} */ ('no-store') };
+
+    const json = await Promise.race([
+      (async () => {
+        const res = await fetchImpl(url, fetchOpts);
+        if (!res || !res.ok) {
+          throw new Error(`HTTP_${res?.status ?? 0}`);
+        }
+        return res.json();
+      })(),
+      timeoutPromise
+    ]);
+
+    return setRuntimeConfig(json, { usedFallback: false });
   } catch {
-    return mergeRuntimeConfig(null);
+    return setRuntimeConfig(null, { usedFallback: true });
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
   }
 }

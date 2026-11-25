@@ -236,6 +236,7 @@ describe('TestAi — Looking Glass Seguro: Anti-SSRF, Rate Limit e Sonda TCP (Et
 
   it('expõe GET /api/looking-glass/presets e POST /api/looking-glass com Anti-SSRF e HTTP 429', async () => {
     const serverOpts = {
+      trustProxy: true,
       lookingGlassRateLimit: 2,
       lookingGlassWindowMs: 60_000,
       lookingGlassLookup: async () => [{ address: '1.1.1.1', family: 4 }],
@@ -324,6 +325,31 @@ describe('TestAi — Looking Glass Seguro: Anti-SSRF, Rate Limit e Sonda TCP (Et
       assert.equal(res429.status, 429);
       assert.ok(Number(res429.headers.get('retry-after')) >= 1);
       assert.ok((res429.headers.get('cache-control') || '').includes('no-store'));
+    });
+
+    // Com TRUST_PROXY desligado (padrão), rotacionar X-Forwarded-For não burla o rate limit por IP
+    await withServer({ ...serverOpts, trustProxy: false }, async (baseUrl) => {
+      for (let i = 1; i <= 2; i += 1) {
+        const resOk = await fetch(`${baseUrl}/api/looking-glass`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Forwarded-For': `203.0.113.${i}`
+          },
+          body: JSON.stringify({ presetId: 'cloudflare' })
+        });
+        assert.equal(resOk.status, 200);
+      }
+
+      const resSpoofBlocked = await fetch(`${baseUrl}/api/looking-glass`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-For': '198.51.100.250'
+        },
+        body: JSON.stringify({ presetId: 'cloudflare' })
+      });
+      assert.equal(resSpoofBlocked.status, 429);
     });
   });
 });

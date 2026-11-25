@@ -9,7 +9,9 @@ import { registerServiceWorker, setupInstallPrompt } from './services/pwa.js';
 import {
   DEFAULT_RUNTIME_CONFIG,
   getRuntimeConfig,
+  getRuntimeState,
   loadRuntimeConfig,
+  RUNTIME_ROUTES,
   setRuntimeConfig
 } from './services/runtime-config.js';
 import { buildShareSummaryText, shareTestResult } from './services/share-card.js';
@@ -21,7 +23,7 @@ import {
   exportHistoryAsCsv,
   exportHistoryAsJson,
   loadHistoryEntries,
-  saveHistoryEntry
+  MAX_HISTORY_ENTRIES
 } from './services/history.service.js';
 import { evaluateUsageProfiles } from './services/usage-verdict.js';
 import {
@@ -56,7 +58,7 @@ import {
 import {
   computeMeanMbps,
   computePeakMbps,
-  formatDeltaMs,
+  formatCoherentDeltaMs,
   formatDuration,
   formatLatency,
   formatMetricWithUnit,
@@ -78,6 +80,7 @@ import {
   resolveGaugeScaleMax,
   setActiveMetricPhase,
   setAllTelemetryEmpty,
+  setBootLoadingControls,
   setContainerEmpty,
   setRunningControls,
   setSimpleStatTone,
@@ -87,6 +90,7 @@ import {
   updateLoadedJitterUI,
   updateOnlineIndicator,
   updateProgressBar,
+  updateRouteOriginBadge,
   updateSimpleGauge,
   updateSimpleGaugePlanMarker
 } from './ui/telemetry-view.js';
@@ -105,6 +109,9 @@ import { renderHistoryPanel } from './ui/history-view.js';
 
 const state = {
   initialized: false,
+  runtimeReady: false,
+  /** @type {'on-net' | 'off-net-fallback'} */
+  activeRoute: RUNTIME_ROUTES.OFF_NET_FALLBACK,
   uiMode: 'simple',
   lastResult: null,
   lastDiagnosis: null,
@@ -255,8 +262,17 @@ function setShareButtonVisible(visible) {
   }
 }
 
-function applyRuntimeBranding(config) {
-  if (!config || typeof document === 'undefined') return;
+/**
+ * @param {any} config
+ * @param {'on-net' | 'off-net-fallback'} [activeRoute]
+ */
+function applyRuntimeBranding(config, activeRoute = RUNTIME_ROUTES.OFF_NET_FALLBACK) {
+  if (!config || typeof document === 'undefined' || !document) return;
+
+  if (document.body?.dataset) {
+    document.body.dataset.runtimeRoute = activeRoute;
+  }
+  updateRouteOriginBadge(config, activeRoute);
 
   if (config.ispName && config.ispName !== DEFAULT_RUNTIME_CONFIG.ispName) {
     const ispEl = document.getElementById('ispNamePill');
@@ -267,11 +283,16 @@ function applyRuntimeBranding(config) {
     document.title = `${config.ispName} — Diagnóstico Inteligente de Internet`;
   }
 
-  if (config.serverLabel && config.serverLabel !== DEFAULT_RUNTIME_CONFIG.serverLabel) {
-    const serverEl = document.getElementById('serverInfo');
-    if (serverEl) {
+  const serverEl = document.getElementById('serverInfo');
+  if (serverEl) {
+    if (serverEl.dataset) {
+      serverEl.dataset.route = activeRoute;
+    }
+    if (config.serverLabel && config.serverLabel !== DEFAULT_RUNTIME_CONFIG.serverLabel) {
       serverEl.textContent = config.serverLabel;
       serverEl.classList.remove('adv-only');
+    } else {
+      serverEl.textContent = config.serverLabel || DEFAULT_RUNTIME_CONFIG.serverLabel;
     }
   }
 }
@@ -281,8 +302,10 @@ function refreshHistoryView() {
     state,
     onDeleteRecord(id) {
       state.history = deleteHistoryRecord(id);
+      state.recentHistory = state.history.slice(0, MAX_HISTORY_ENTRIES);
       state.selectedForCompare = state.selectedForCompare.filter((item) => item !== id);
       refreshHistoryView();
+      renderRecentHistoryPanel(state.recentHistory);
     },
     onToggleCompare(id) {
       if (state.selectedForCompare.includes(id)) {
@@ -702,8 +725,19 @@ function handleCompletedResult(result, isPartial = false) {
   setText('uploadLatencyValue', formatLatency(m.uploadLatency.value, 0, m.uploadLatency.status));
   updateLoadedJitterUI(m.downloadJitter, m.uploadJitter, false);
 
-  setText('downloadLatencyDeltaMeta', `ms (${formatDeltaMs(m.downloadLatencyDelta.value)})`);
-  setText('uploadLatencyDeltaMeta', `ms (${formatDeltaMs(m.uploadLatencyDelta.value)})`);
+  const dlDeltaCoherentText = formatCoherentDeltaMs(
+    m.ping.value,
+    m.downloadLatency.value,
+    m.downloadLatencyDelta.value
+  );
+  const ulDeltaCoherentText = formatCoherentDeltaMs(
+    m.ping.value,
+    m.uploadLatency.value,
+    m.uploadLatencyDelta.value
+  );
+
+  setText('downloadLatencyDeltaMeta', `ms (${dlDeltaCoherentText})`);
+  setText('uploadLatencyDeltaMeta', `ms (${ulDeltaCoherentText})`);
 
   setText(
     'avgSpeed',
@@ -736,9 +770,14 @@ function handleCompletedResult(result, isPartial = false) {
 
   setText(
     'latencyChartMeta',
-    `Ocioso ${formatLatency(m.ping.value)} ms · ↓ ${formatDeltaMs(m.downloadLatencyDelta.value)} · ↑ ${formatDeltaMs(m.uploadLatencyDelta.value)}`
+    `Ocioso ${formatLatency(m.ping.value)} ms · ↓ ${dlDeltaCoherentText} · ↑ ${ulDeltaCoherentText}`
   );
   renderLatencyComparisonChart(document.getElementById('latencyChart'), result);
+
+  if (result.routeType === 'on-net' || result.routeType === 'off-net-fallback') {
+    state.activeRoute = result.routeType;
+    applyRuntimeBranding(getRuntimeConfig(), result.routeType);
+  }
 
   renderDiagnosticsAndGaming(diagnosis, gaming, state);
   renderTechnicalPanel(result);
@@ -747,14 +786,14 @@ function handleCompletedResult(result, isPartial = false) {
     renderDeviceComparisonPanel(state.selectedDevice, state.lastResult);
   }
 
-  const record = toHistoryRecord(result, diagnosis, gaming);
+  const previousEntry = state.history[0] || state.recentHistory[0] || null;
+  const record = toHistoryRecord(result, diagnosis, gaming, getRuntimeConfig());
   state.history = appendHistoryRecord(record);
+  state.recentHistory = state.history.slice(0, MAX_HISTORY_ENTRIES);
   refreshHistoryView();
 
-  const previousEntry = state.recentHistory[0] || null;
-  const currentEntry = buildHistoryEntry(result, getRuntimeConfig());
+  const currentEntry = state.recentHistory[0] || buildHistoryEntry(result, getRuntimeConfig());
   const comparisonDelta = computeComparisonDelta(currentEntry, previousEntry);
-  state.recentHistory = saveHistoryEntry(currentEntry);
   const usageVerdicts = evaluateUsageProfiles(result);
   renderUsageVerdictsAndComparison(usageVerdicts, comparisonDelta);
   renderRecentHistoryPanel(state.recentHistory);
@@ -765,6 +804,9 @@ function handleCompletedResult(result, isPartial = false) {
 function triggerStartOrCancel() {
   if (speedTestService.isRunning()) {
     speedTestService.cancel();
+    return;
+  }
+  if (!state.runtimeReady) {
     return;
   }
 
@@ -989,7 +1031,8 @@ function initApp() {
       state.lastResult,
       state.lastDiagnosis,
       state.lastGaming,
-      notes
+      notes,
+      getRuntimeConfig()
     );
     try {
       await navigator.clipboard.writeText(txt);
@@ -1009,7 +1052,8 @@ function initApp() {
       state.lastResult,
       state.lastDiagnosis,
       state.lastGaming,
-      notes
+      notes,
+      getRuntimeConfig()
     );
     downloadFile(`testai-laudo-${state.lastResult.id}.txt`, txt, 'text/plain;charset=utf-8');
   });
@@ -1032,8 +1076,11 @@ function initApp() {
 
   document.getElementById('clearHistoryBtn')?.addEventListener('click', () => {
     state.history = clearHistory();
+    state.recentHistory = [];
     state.selectedForCompare = [];
     refreshHistoryView();
+    renderRecentHistoryPanel(state.recentHistory);
+    resetUsageVerdictsUI();
   });
 
   document.getElementById('recentExportCsvBtn')?.addEventListener('click', () => {
@@ -1056,6 +1103,9 @@ function initApp() {
 
   document.getElementById('recentClearHistoryBtn')?.addEventListener('click', () => {
     state.recentHistory = clearInsightsHistory();
+    state.history = [];
+    state.selectedForCompare = [];
+    refreshHistoryView();
     renderRecentHistoryPanel(state.recentHistory);
     resetUsageVerdictsUI();
   });
@@ -1094,29 +1144,38 @@ function initApp() {
   registerServiceWorker();
   const lookingGlassPanel = setupLookingGlassPanel({ getConfig: getRuntimeConfig });
 
+  state.runtimeReady = false;
+  setBootLoadingControls(true);
+  updateRouteOriginBadge(getRuntimeConfig(), state.activeRoute);
+
   loadRuntimeConfig()
     .then((config) => {
-      setRuntimeConfig(config);
+      const rtState = getRuntimeState();
+      state.activeRoute = rtState.activeRoute;
       speedTestService.setRuntimeConfig(config);
-      applyRuntimeBranding(config);
+      applyRuntimeBranding(config, rtState.activeRoute);
     })
-    .catch(() => {})
+    .catch(() => {
+      const fallback = setRuntimeConfig(null, { usedFallback: true });
+      state.activeRoute = RUNTIME_ROUTES.OFF_NET_FALLBACK;
+      speedTestService.setRuntimeConfig(fallback);
+      applyRuntimeBranding(fallback, RUNTIME_ROUTES.OFF_NET_FALLBACK);
+    })
     .finally(() => {
+      state.runtimeReady = true;
+      if (!speedTestService.isRunning()) {
+        setBootLoadingControls(false);
+      }
       lookingGlassPanel.refreshAvailability().catch(() => {});
     });
 
   try {
     state.history = loadHistory();
-    refreshHistoryView();
-  } catch (err) {
-    console.error('[TestAi] Falha ao carregar histórico local:', err);
-  }
-
-  try {
     state.recentHistory = loadHistoryEntries();
+    refreshHistoryView();
     renderRecentHistoryPanel(state.recentHistory);
   } catch (err) {
-    console.error('[TestAi] Falha ao carregar histórico comparativo:', err);
+    console.error('[TestAi] Falha ao carregar histórico local unificado:', err);
   }
 }
 

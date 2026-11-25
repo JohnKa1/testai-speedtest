@@ -96,7 +96,8 @@ export function sanitizeBandwidthPoints(points) {
       mbps: pt.bps / 1_000_000,
       bytes: isNonNegativeNumber(pt.bytes) ? pt.bytes : null,
       duration: isNonNegativeNumber(pt.duration) ? pt.duration : null,
-      measTime: isNonNegativeNumber(pt.measTime) ? pt.measTime : null
+      measTime: isNonNegativeNumber(pt.measTime) ? pt.measTime : null,
+      ...(isNonNegativeNumber(pt.elapsedMs) ? { elapsedMs: pt.elapsedMs } : {})
     }));
 }
 

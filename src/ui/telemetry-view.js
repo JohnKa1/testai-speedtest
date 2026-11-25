@@ -11,6 +11,7 @@ import {
 import { setButtonIconAndLabel } from './icons.js';
 
 export const PHASE_LABELS = Object.freeze({
+  booting: 'Inicializando',
   idle: 'Aguardando',
   latency: 'Medindo Ping',
   download: 'Testando Download',
@@ -432,6 +433,76 @@ export function setRunningControls(isRunning, { hasCompleted = false } = {}) {
     const simpleIcon = active ? 'stop' : hasCompleted ? 'refresh' : 'play';
     setButtonIconAndLabel(btnSimple, simpleIcon, simpleLabel);
     btnSimple.classList.toggle('cancel', active);
+  }
+}
+
+/**
+ * Mantém botões de início bloqueados em estado de inicialização até que
+ * `loadRuntimeConfig()` resolva ou entre em fallback por timeout.
+ *
+ * @param {boolean} isBooting
+ */
+export function setBootLoadingControls(isBooting) {
+  if (typeof document === 'undefined' || !document) return;
+  const booting = Boolean(isBooting);
+  document.body?.classList?.toggle('is-booting', booting);
+
+  const btnSimple = /** @type {HTMLButtonElement | null} */ (
+    document.getElementById('startBtnSimple')
+  );
+  const btnAdv = /** @type {HTMLButtonElement | null} */ (
+    document.getElementById('startBtnAdv')
+  );
+
+  if (btnSimple) {
+    btnSimple.disabled = booting;
+    btnSimple.setAttribute('aria-busy', String(booting));
+    setButtonIconAndLabel(btnSimple, 'play', booting ? 'Inicializando...' : 'Iniciar Teste');
+  }
+  if (btnAdv) {
+    btnAdv.disabled = booting;
+    btnAdv.setAttribute('aria-busy', String(booting));
+    btnAdv.textContent = booting ? 'Inicializando...' : 'Iniciar Diagnóstico';
+  }
+
+  setText('simplePhaseLabel', booting ? PHASE_LABELS.booting : PHASE_LABELS.idle);
+  setText('phaseLabel', booting ? PHASE_LABELS.booting : PHASE_LABELS.idle);
+}
+
+/**
+ * Atualiza o selo visual discreto de rota ativa (On-Net vs Off-Net / Cloudflare),
+ * mantendo paridade entre modo completo e Modo Widget (`?embed=1`).
+ *
+ * @param {any} config
+ * @param {'on-net' | 'off-net-fallback'} [activeRoute]
+ */
+export function updateRouteOriginBadge(config, activeRoute = 'off-net-fallback') {
+  if (typeof document === 'undefined' || !document) return;
+  const badgeEl = document.getElementById('routeOriginBadge');
+  if (!badgeEl) return;
+
+  const isOnNet = activeRoute === 'on-net';
+  const rawIsp = typeof config?.ispName === 'string' ? config.ispName.trim() : '';
+  const ispLabel = rawIsp || 'Provedor';
+  const labelText = isOnNet
+    ? `Servidor Local • ${ispLabel}`
+    : 'Rota Externa • Cloudflare';
+  const explanation = isOnNet
+    ? 'Medição On-Net: o teste ocorre diretamente contra o servidor local do provedor, avaliando com precisão a sua rede de acesso sem depender de rotas externas.'
+    : 'Medição Off-Net: o teste utiliza a borda externa Cloudflare Anycast (modo demonstração ou fallback, sujeito a rotas externas ao seu provedor).';
+
+  badgeEl.setAttribute('data-route', isOnNet ? 'on-net' : 'off-net-fallback');
+  badgeEl.setAttribute('title', explanation);
+  badgeEl.setAttribute('data-tip', explanation);
+  badgeEl.setAttribute('aria-label', `${labelText}. ${explanation}`);
+  badgeEl.classList?.toggle('tone-good', isOnNet);
+  badgeEl.classList?.toggle('tone-warning', !isOnNet);
+
+  const textNode = document.getElementById('routeOriginText');
+  if (textNode) {
+    textNode.textContent = labelText;
+  } else {
+    badgeEl.textContent = labelText;
   }
 }
 

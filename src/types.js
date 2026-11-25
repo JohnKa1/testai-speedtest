@@ -22,12 +22,24 @@
  * @property {number | null} bytes
  * @property {number | null} duration
  * @property {number | null} measTime
+ * @property {number} [elapsedMs]
  */
 
 /**
  * @typedef {Object} LatencySample
  * @property {number} index
  * @property {number} ms
+ */
+
+/**
+ * @typedef {Object} LatencyProbePhaseStats
+ * @property {number} attempts
+ * @property {number} succeeded
+ * @property {number} timeouts
+ * @property {number} failures
+ * @property {number} lossPct
+ * @property {number | null} maxMs
+ * @property {number | null} p95Ms
  */
 
 /**
@@ -66,6 +78,7 @@
  * @property {number} durationMs
  * @property {{ id: string, label: string }} profile
  * @property {'sustained' | 'commercial'} [measurementMode]
+ * @property {'on-net' | 'off-net-fallback'} [routeType]
  * @property {{ download: number, upload: number }} [parallelStreams]
  * @property {{ linkType: string, contractedMbps: number | null, notes: string }} context
  * @property {SpeedTestMetrics} metrics
@@ -85,13 +98,20 @@
  *   uploadLatencyPoints: LatencySample[]
  * }} series
  * @property {LoadedLatencySpikes} [loadedSpikes]
+ * @property {{
+ *   idle: LatencyProbePhaseStats,
+ *   download: LatencyProbePhaseStats,
+ *   upload: LatencyProbePhaseStats
+ * }} [latencyProbes]
  * @property {Record<string, any> | null} rawSummary
  */
 
 /**
  * @typedef {Object} LoadedLatencySpikes
  * @property {'none' | 'isolated' | 'recurrent'} status
+ * @property {boolean} [hasSevereSpike]
  * @property {number} thresholdDeltaMs
+ * @property {number} [severeDeltaThresholdMs]
  * @property {number} totalSamples
  * @property {number} spikeCount
  * @property {number} spikeRatio
@@ -201,23 +221,35 @@
 
 /**
  * @typedef {Object} HistoryRecord
+ * @property {number} [schemaVersion]
  * @property {string} id
  * @property {string} timestamp
  * @property {boolean} incomplete
  * @property {number} durationMs
+ * @property {string} [ispName]
+ * @property {string} [serverLabel]
+ * @property {'on-net' | 'off-net-fallback'} [routeType]
+ * @property {'sustained' | 'commercial'} [measurementMode]
  * @property {string} profileLabel
  * @property {{ linkType?: string, contractedMbps?: number | null, notes?: string }} context
  * @property {number | null} downloadMbps
+ * @property {number | null} [sustainedDownloadMbps]
  * @property {number | null} uploadMbps
+ * @property {number | null} [sustainedUploadMbps]
  * @property {number | null} pingMs
  * @property {number | null} jitterMs
  * @property {number | null} downloadLatencyMs
  * @property {number | null} uploadLatencyMs
  * @property {number | null} downloadLatencyDeltaMs
  * @property {number | null} uploadLatencyDeltaMs
+ * @property {number | null} [loadedDeltaMs]
  * @property {number | null} downloadJitterMs
  * @property {number | null} uploadJitterMs
  * @property {number | null} totalBytes
+ * @property {Record<string, any> | null} [loadedSpikes]
+ * @property {Record<string, any> | null} [latencyProbes]
+ * @property {{ label: string, tone: string, reason: string }} [stability]
+ * @property {string} [stabilityLabel]
  * @property {string} diagnosisCode
  * @property {string} diagnosisTitle
  * @property {string} diagnosisSummary

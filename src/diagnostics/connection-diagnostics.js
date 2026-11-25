@@ -5,6 +5,11 @@
  */
 
 import { DIAGNOSTIC_THRESHOLDS } from '../config/speedtest.config.js';
+import {
+  evaluateLoadedLatencySpikes,
+  evaluateProbeLoss,
+  STABILITY_RULES
+} from './stability-rules.js';
 import { isNonNegativeNumber, METRIC_STATUS } from '../utils/validators.js';
 import {
   computeStats,
@@ -17,7 +22,7 @@ import {
 
 /**
  * Analisa amostras individuais de latência sob carga (download e upload) para
- * detectar picos isolados ou recorrentes mesmo quando a mediana P50 parece limpa.
+ * detectar picos isolados (leves ou severos via Spike Guard) ou recorrentes.
  *
  * @param {{
  *   metrics?: Partial<import('../types.js').SpeedTestMetrics>,
@@ -25,100 +30,14 @@ import {
  * }} result
  * @param {{
  *   spikeDeltaThresholdMs?: number,
+ *   severeDeltaThresholdMs?: number,
  *   recurrentCountMin?: number,
  *   recurrentRatioMin?: number
  * }} [options]
  * @returns {import('../types.js').LoadedLatencySpikes}
  */
 export function analyzeLoadedLatencySpikes(result, options = {}) {
-  const spikeDeltaThresholdMs = options.spikeDeltaThresholdMs ?? 80;
-  const recurrentCountMin = options.recurrentCountMin ?? 3;
-  const recurrentRatioMin = options.recurrentRatioMin ?? 0.25;
-
-  const idlePing =
-    result?.metrics?.ping?.status === METRIC_STATUS.MEASURED &&
-    isNonNegativeNumber(result.metrics.ping.value)
-      ? result.metrics.ping.value
-      : null;
-
-  const dlRaw = Array.isArray(result?.series?.downloadLatencyPoints)
-    ? result.series.downloadLatencyPoints
-    : [];
-  const ulRaw = Array.isArray(result?.series?.uploadLatencyPoints)
-    ? result.series.uploadLatencyPoints
-    : [];
-
-  const extractSamples = (arr, phase) =>
-    arr
-      .map((pt) => (typeof pt === 'number' ? pt : pt?.ms))
-      .filter((ms) => isNonNegativeNumber(ms))
-      .map((ms) => ({ ms, phase }));
-
-  const allSamples = [
-    ...extractSamples(dlRaw, /** @type {'download'} */ ('download')),
-    ...extractSamples(ulRaw, /** @type {'upload'} */ ('upload'))
-  ];
-
-  if (idlePing === null || allSamples.length === 0) {
-    return {
-      status: 'none',
-      thresholdDeltaMs: spikeDeltaThresholdMs,
-      totalSamples: allSamples.length,
-      spikeCount: 0,
-      spikeRatio: 0,
-      peakMs: null,
-      peakDeltaMs: null,
-      peakPhase: null,
-      downloadSpikeCount: 0,
-      uploadSpikeCount: 0
-    };
-  }
-
-  const spikeCutoffMs = idlePing + spikeDeltaThresholdMs;
-  let downloadSpikeCount = 0;
-  let uploadSpikeCount = 0;
-  let peakMs = null;
-  let peakDeltaMs = null;
-  /** @type {'download' | 'upload' | null} */
-  let peakPhase = null;
-
-  for (const sample of allSamples) {
-    if (sample.ms >= spikeCutoffMs) {
-      if (sample.phase === 'download') downloadSpikeCount += 1;
-      else uploadSpikeCount += 1;
-
-      if (peakMs === null || sample.ms > peakMs) {
-        peakMs = Math.round(sample.ms * 10) / 10;
-        peakDeltaMs = Math.round(Math.max(0, sample.ms - idlePing) * 10) / 10;
-        peakPhase = sample.phase;
-      }
-    }
-  }
-
-  const spikeCount = downloadSpikeCount + uploadSpikeCount;
-  const totalSamples = allSamples.length;
-  const spikeRatio = totalSamples > 0 ? spikeCount / totalSamples : 0;
-
-  /** @type {'none' | 'isolated' | 'recurrent'} */
-  let status = 'none';
-  if (spikeCount >= recurrentCountMin || (spikeCount > 0 && spikeRatio >= recurrentRatioMin)) {
-    status = 'recurrent';
-  } else if (spikeCount >= 1) {
-    status = 'isolated';
-  }
-
-  return {
-    status,
-    thresholdDeltaMs: spikeDeltaThresholdMs,
-    totalSamples,
-    spikeCount,
-    spikeRatio,
-    peakMs,
-    peakDeltaMs,
-    peakPhase,
-    downloadSpikeCount,
-    uploadSpikeCount
-  };
+  return evaluateLoadedLatencySpikes(result, options);
 }
 
 export const DIAGNOSIS_CATALOG = Object.freeze({
@@ -174,7 +93,12 @@ export function evaluateConnection(result, customThresholds = {}) {
   const ul = m.upload?.status === METRIC_STATUS.MEASURED ? m.upload.value : null;
   const ping = m.ping?.status === METRIC_STATUS.MEASURED ? m.ping.value : null;
   const speedMeta = getCanonicalSpeedMeta(result?.measurementMode);
-  const loadedSpikes = result?.loadedSpikes || analyzeLoadedLatencySpikes(result);
+  const rawSpikes = result?.loadedSpikes || analyzeLoadedLatencySpikes(result);
+  const loadedSpikes =
+    typeof rawSpikes?.hasSevereSpike === 'boolean'
+      ? rawSpikes
+      : evaluateLoadedLatencySpikes(result);
+  const probeLoss = evaluateProbeLoss(result);
   const jitter = m.jitter?.status === METRIC_STATUS.MEASURED ? m.jitter.value : null;
   const dlLat =
     m.downloadLatency?.status === METRIC_STATUS.MEASURED ? m.downloadLatency.value : null;
@@ -278,14 +202,16 @@ export function evaluateConnection(result, customThresholds = {}) {
   const findings = [];
 
   const maxLoadedDelta = Math.max(dlDelta ?? 0, ulDelta ?? 0);
+  const moderateDeltaMin =
+    t.loadedDeltaModerateMin ?? STABILITY_RULES.loadedDeltaModerateMinMs;
   const hasSevereLoadedLatency =
     (dlDelta !== null && dlDelta >= t.loadedDeltaBufferbloatMin) ||
     (ulDelta !== null && ulDelta >= t.loadedDeltaBufferbloatMin);
 
   const hasModerateLoadedLatency =
     !hasSevereLoadedLatency &&
-    ((dlDelta !== null && dlDelta > t.loadedDeltaModerateMax) ||
-      (ulDelta !== null && ulDelta > t.loadedDeltaModerateMax) ||
+    ((dlDelta !== null && dlDelta >= moderateDeltaMin) ||
+      (ulDelta !== null && ulDelta >= moderateDeltaMin) ||
       (dlDelta !== null &&
         dlDelta > t.loadedDeltaGoodMax &&
         ulDelta !== null &&
@@ -400,6 +326,69 @@ export function evaluateConnection(result, customThresholds = {}) {
         ],
         confirmatoryTest:
           'Executar o perfil Estabilidade Prolongada via cabo para observar se os picos sob carga desaparecem.'
+      });
+    }
+
+    if (
+      !hasSevereLoadedLatency &&
+      loadedSpikes.status === 'isolated' &&
+      loadedSpikes.hasSevereSpike &&
+      loadedSpikes.peakMs !== null
+    ) {
+      findings.push({
+        code: DIAGNOSIS_CATALOG.POSSIBLE_CONGESTION,
+        severity: 'warning',
+        priority: 83,
+        title: 'Pico severo isolado de latência sob carga',
+        summary: `Apesar da mediana sob carga controlada (${formatDeltaMs(dlDelta)} ↓ / ${formatDeltaMs(ulDelta)} ↑), foi registrado um pico severo de ${Math.round(loadedSpikes.peakMs)} ms durante o ${loadedSpikes.peakPhase}.`,
+        observed: `Pico isolado severo (+${Math.round(loadedSpikes.peakDeltaMs ?? 0)} ms acima do ping em repouso), atingindo ${Math.round(loadedSpikes.peakMs)} ms no ${loadedSpikes.peakPhase}.`,
+        basisMetrics: [
+          `Ping ocioso: ${formatLatency(ping)} ms`,
+          `Pico severo sob carga (${loadedSpikes.peakPhase}): ${Math.round(loadedSpikes.peakMs)} ms`,
+          `Amostras com pico: ${loadedSpikes.spikeCount}/${loadedSpikes.totalSamples}`
+        ],
+        meaning:
+          'Um salto pontual acima de 250 ms sob saturação indica retenção aguda momentânea de fila ou pausa de rádio/interface, capaz de causar engasgo perceptível em jogos e chamadas em tempo real.',
+        probableCauses: [
+          'Hipótese: rajada inicial de enfileiramento no roteador/ONT antes da estabilização da janela TCP.',
+          'Hipótese: varredura de canal (roaming/background scan) ou contenção momentânea no adaptador Wi-Fi.'
+        ],
+        userActions: [
+          'Repita a medição via cabo Ethernet ou ative QoS/SQM no roteador caso perceba travamentos pontuais em uso simultâneo.'
+        ],
+        confirmatoryTest:
+          'Executar o perfil Estabilidade Prolongada para verificar se o pico acima de 250 ms volta a ocorrer.'
+      });
+    }
+
+    if (probeLoss.hasRelevantLoss) {
+      findings.push({
+        code: probeLoss.isSevereLoss
+          ? DIAGNOSIS_CATALOG.POSSIBLE_BUFFERBLOAT
+          : DIAGNOSIS_CATALOG.POSSIBLE_CONGESTION,
+        severity: probeLoss.isSevereLoss ? 'danger' : 'warning',
+        priority: probeLoss.isSevereLoss ? 96 : 86,
+        title: probeLoss.isSevereLoss
+          ? 'Perda acentuada de sondas de latência sob saturação'
+          : 'Falhas ou timeouts parciais nas sondas de latência',
+        summary: `Durante a medição (${probeLoss.worstPhase}), ${Math.round(probeLoss.worstLossPct)}% das sondas de latência expiraram ou falharam (${probeLoss.loadedTimeouts} timeout(s) sob carga), indicando saturação de fila além das amostras respondidas.`,
+        observed: `Perda máxima de sondas em ${Math.round(probeLoss.worstLossPct)}% na fase ${probeLoss.worstPhase} (${probeLoss.totalFailures} falha(s) no total).`,
+        basisMetrics: [
+          `Perda de sondas (${probeLoss.worstPhase}): ${Math.round(probeLoss.worstLossPct)}%`,
+          `Timeouts sob carga: ${probeLoss.loadedTimeouts}`,
+          `Ping ocioso medido: ${formatLatency(ping)} ms`
+        ],
+        meaning:
+          'Quando o enfileiramento ou congestionamento descarta ou atrasa pacotes além do tempo limite, aplicações interativas sofrem congelamentos mesmo que os poucos pacotes sobreviventes exibam baixa mediana.',
+        probableCauses: [
+          'Hipótese principal: esgotamento de fila (tail-drop / bufferbloat severo) no roteador ou enlace durante saturação máxima.',
+          'Hipótese alternativa: perda de pacotes em enlace Wi-Fi com interferência ou limitação de sessões no equipamento.'
+        ],
+        userActions: [
+          'Ative gerenciamento inteligente de filas (SQM / QoS) no roteador e repita o teste via cabo Ethernet.'
+        ],
+        confirmatoryTest:
+          'Executar o teste conectado por cabo diretamente ao roteador principal e verificar se a perda de sondas cai para 0%.'
       });
     }
 

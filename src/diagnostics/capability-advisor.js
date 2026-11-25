@@ -6,6 +6,11 @@
 import { isNonNegativeNumber, METRIC_STATUS } from '../utils/validators.js';
 import { formatLatency, formatSpeed } from '../utils/formatters.js';
 import { analyzeLoadedLatencySpikes } from './connection-diagnostics.js';
+import {
+  evaluateLoadedLatencySpikes,
+  evaluateProbeLoss,
+  STABILITY_RULES
+} from './stability-rules.js';
 
 export function normalizeSpecText(text) {
   return String(text ?? '')
@@ -464,6 +469,8 @@ export function evaluateSimpleStability(result, isPartial = false) {
     isNonNegativeNumber(m.uploadLatencyDelta.value);
   const hasJitter =
     m.jitter?.status === METRIC_STATUS.MEASURED && isNonNegativeNumber(m.jitter.value);
+  const hasPing =
+    m.ping?.status === METRIC_STATUS.MEASURED && isNonNegativeNumber(m.ping.value);
 
   const missingCore = Boolean(
     isPartial ||
@@ -481,7 +488,43 @@ export function evaluateSimpleStability(result, isPartial = false) {
     };
   }
 
+  const ping = hasPing ? m.ping.value : 0;
+  const jitter = hasJitter ? m.jitter.value : 0;
+  const probeLoss = evaluateProbeLoss(result);
+
+  if (probeLoss.isSevereLoss) {
+    return {
+      label: 'Sensível',
+      sub: `Perda de ${Math.round(probeLoss.worstLossPct)}% nas sondas (${probeLoss.worstPhase})`,
+      tone: 'danger'
+    };
+  }
+
   if (!hasDlDelta && !hasUlDelta) {
+    if (jitter > STABILITY_RULES.idleJitterSensitiveMinMs) {
+      return {
+        label: 'Sensível',
+        sub: `Jitter elevado (${Math.round(jitter)} ms)`,
+        tone: 'danger'
+      };
+    }
+    if (probeLoss.isModerateLoss) {
+      return {
+        label: 'Moderada',
+        sub:
+          probeLoss.worstLossPct >= STABILITY_RULES.moderateLossPctMin
+            ? `Perda de ${Math.round(probeLoss.worstLossPct)}% nas sondas (${probeLoss.worstPhase})`
+            : `${probeLoss.loadedTimeouts} timeouts sob carga (${probeLoss.worstPhase})`,
+        tone: 'warning'
+      };
+    }
+    if (ping > STABILITY_RULES.idlePingModerateStabilityMinMs) {
+      return {
+        label: 'Moderada',
+        sub: `Ping alto em repouso (${Math.round(ping)} ms)`,
+        tone: 'warning'
+      };
+    }
     return {
       label: 'Parcial',
       sub: hasJitter ? `Jitter ${m.jitter.value.toFixed(1)} ms` : 'Sem dados sob carga',
@@ -493,9 +536,8 @@ export function evaluateSimpleStability(result, isPartial = false) {
     hasDlDelta ? m.downloadLatencyDelta.value : 0,
     hasUlDelta ? m.uploadLatencyDelta.value : 0
   );
-  const jitter = hasJitter ? m.jitter.value : 0;
 
-  if (maxDelta >= 60 || jitter > 20) {
+  if (maxDelta >= STABILITY_RULES.loadedDeltaSevereMinMs) {
     return {
       label: 'Sensível',
       sub: `+${Math.round(maxDelta)} ms sob carga`,
@@ -503,7 +545,56 @@ export function evaluateSimpleStability(result, isPartial = false) {
     };
   }
 
-  if (maxDelta >= 30 || jitter > 12) {
+  if (jitter > STABILITY_RULES.idleJitterSensitiveMinMs) {
+    return {
+      label: 'Sensível',
+      sub: `Jitter elevado (${Math.round(jitter)} ms)`,
+      tone: 'danger'
+    };
+  }
+
+  if (ping > STABILITY_RULES.idlePingCriticalStabilityMinMs) {
+    return {
+      label: 'Sensível',
+      sub: `Ping crítico em repouso (${Math.round(ping)} ms)`,
+      tone: 'danger'
+    };
+  }
+
+  if (probeLoss.isModerateLoss) {
+    return {
+      label: 'Moderada',
+      sub:
+        probeLoss.worstLossPct >= STABILITY_RULES.moderateLossPctMin
+          ? `Perda de ${Math.round(probeLoss.worstLossPct)}% nas sondas (${probeLoss.worstPhase})`
+          : `${probeLoss.loadedTimeouts} timeouts sob carga (${probeLoss.worstPhase})`,
+      tone: 'warning'
+    };
+  }
+
+  const rawSpikes = result?.loadedSpikes || analyzeLoadedLatencySpikes(result);
+  const loadedSpikes =
+    typeof rawSpikes?.hasSevereSpike === 'boolean'
+      ? rawSpikes
+      : evaluateLoadedLatencySpikes(result);
+
+  if (loadedSpikes.status === 'recurrent' && loadedSpikes.peakMs !== null) {
+    return {
+      label: 'Moderada',
+      sub: `Picos até ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase})`,
+      tone: 'warning'
+    };
+  }
+
+  if (loadedSpikes.hasSevereSpike && loadedSpikes.peakMs !== null) {
+    return {
+      label: 'Moderada',
+      sub: `Pico severo de ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase})`,
+      tone: 'warning'
+    };
+  }
+
+  if (maxDelta >= STABILITY_RULES.loadedDeltaModerateMinMs) {
     return {
       label: 'Moderada',
       sub: `+${Math.round(maxDelta)} ms sob carga`,
@@ -511,11 +602,18 @@ export function evaluateSimpleStability(result, isPartial = false) {
     };
   }
 
-  const loadedSpikes = result?.loadedSpikes || analyzeLoadedLatencySpikes(result);
-  if (loadedSpikes.status === 'recurrent' && loadedSpikes.peakMs !== null) {
+  if (jitter > STABILITY_RULES.idleJitterGoodMaxMs) {
     return {
       label: 'Moderada',
-      sub: `Picos até ${Math.round(loadedSpikes.peakMs)} ms (${loadedSpikes.peakPhase})`,
+      sub: `Jitter moderado (${jitter.toFixed(1)} ms)`,
+      tone: 'warning'
+    };
+  }
+
+  if (ping > STABILITY_RULES.idlePingModerateStabilityMinMs) {
+    return {
+      label: 'Moderada',
+      sub: `Ping alto em repouso (${Math.round(ping)} ms)`,
       tone: 'warning'
     };
   }

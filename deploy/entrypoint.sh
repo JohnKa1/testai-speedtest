@@ -5,6 +5,15 @@ json_escape() {
   printf '%s' "$1" | tr '\r\n\t' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+sanitize_frame_ancestors() {
+  cleaned="$(printf '%s' "$1" | tr '\r\n\t' '   ' | sed 's/[;"\\]//g; s/^[[:space:]]*//; s/[[:space:]]*$//')"
+  if [ -z "$cleaned" ]; then
+    printf '%s' "'self'"
+  else
+    printf '%s' "$cleaned"
+  fi
+}
+
 parse_stream_count() {
   val="$1"
   fallback="$2"
@@ -28,6 +37,7 @@ SERVER_LABEL_VAL="${SERVER_LABEL:-On-Net Server}"
 MEASUREMENT_MODE_RAW="${MEASUREMENT_MODE:-commercial}"
 DL_STREAMS_RAW="${PARALLEL_DOWNLOAD_STREAMS:-6}"
 UL_STREAMS_RAW="${PARALLEL_UPLOAD_STREAMS:-4}"
+FRAME_ANCESTORS_RAW="${ALLOWED_FRAME_ANCESTORS:-'self'}"
 
 case "$MEASUREMENT_MODE_RAW" in
   sustained|commercial)
@@ -42,6 +52,12 @@ DL_STREAMS_VAL="$(parse_stream_count "$DL_STREAMS_RAW" 6)"
 UL_STREAMS_VAL="$(parse_stream_count "$UL_STREAMS_RAW" 4)"
 ISP_NAME_ESC="$(json_escape "$ISP_NAME_VAL")"
 SERVER_LABEL_ESC="$(json_escape "$SERVER_LABEL_VAL")"
+FRAME_ANCESTORS_VAL="$(sanitize_frame_ancestors "$FRAME_ANCESTORS_RAW")"
+
+if [ -f /etc/nginx/conf.d/default.conf ]; then
+  FRAME_ANCESTORS_SED="$(printf '%s' "$FRAME_ANCESTORS_VAL" | sed 's/[&|]/\\&/g')"
+  sed -i "s|frame-ancestors 'self';|frame-ancestors ${FRAME_ANCESTORS_SED};|g" /etc/nginx/conf.d/default.conf
+fi
 
 cat <<EOF > /usr/share/nginx/html/config.json
 {
